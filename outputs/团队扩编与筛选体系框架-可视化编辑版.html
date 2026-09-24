@@ -1,0 +1,1039 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>团队扩编与筛选体系框架</title>
+<style>
+  :root{
+    --bg:#14171c;
+    --panel:#1b1f26;
+    --panel-2:#20242c;
+    --border:#2c313a;
+    --text:#eceef1;
+    --text-dim:#9aa3af;
+    --text-faint:#6b7380;
+    --accent:#e0a94b;      /* 目标 / 核心主线 */
+    --blue:#5b9bd9;        /* 组织杠杆层 */
+    --green:#4caf7d;       /* 优秀档 */
+    --teal:#5bb0a6;        /* 合格档 */
+    --amber:#d99a3e;       /* 临界档 */
+    --red:#c9645f;         /* 危险 / 淘汰 */
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: border-box;
+  }
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#f5f4f1;
+      --panel:#ffffff;
+      --panel-2:#faf9f7;
+      --border:#e2dfd8;
+      --text:#1c1c1a;
+      --text-dim:#5c5a54;
+      --text-faint:#8b8880;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#f5f4f1;
+    --panel:#ffffff;
+    --panel-2:#faf9f7;
+    --border:#e2dfd8;
+    --text:#1c1c1a;
+    --text-dim:#5c5a54;
+    --text-faint:#8b8880;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-padding-top: env(safe-area-inset-top, 0px);}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family: "Noto Serif SC","Songti SC",  -apple-system, "PingFang SC", "Microsoft YaHei", serif;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{
+    max-width:1040px;
+    margin:0 auto;
+    padding: 48px 24px 96px;
+  }
+  header.page{
+    margin-bottom:48px;
+    border-bottom:1px solid var(--border);
+    padding-bottom:28px;
+  }
+  .eyebrow{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:13px;
+    color:var(--accent);
+    letter-spacing:0.02em;
+    margin:0 0 10px;
+  }
+  h1{
+    font-size:30px;
+    margin:0 0 12px;
+    font-weight:600;
+    letter-spacing:0.01em;
+  }
+  .sub{
+    color:var(--text-dim);
+    font-size:15px;
+    max-width:640px;
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+
+  /* ---- 总目标条 ---- */
+  .goal{
+    background:linear-gradient(135deg, var(--panel-2), var(--panel));
+    border:1px solid var(--border);
+    border-left:3px solid var(--accent);
+    padding:24px 28px;
+    margin-bottom:40px;
+  }
+  .goal .label{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:12px;
+    color:var(--accent);
+    margin-bottom:8px;
+  }
+  .goal p{
+    margin:0;
+    font-size:17px;
+    color:var(--text);
+  }
+
+  /* ---- 三层结构 ---- */
+  .layers{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:16px;
+    margin-bottom:16px;
+  }
+  @media (max-width:760px){
+    .layers{grid-template-columns:1fr;}
+  }
+  .layer{
+    background:var(--panel);
+    border:1px solid var(--border);
+    padding:20px;
+    position:relative;
+  }
+  .layer .num{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:12px;
+    color:var(--text-faint);
+    margin-bottom:6px;
+  }
+  .layer h3{
+    margin:0 0 10px;
+    font-size:16px;
+    font-weight:600;
+  }
+  .layer ul{
+    margin:0;
+    padding-left:18px;
+    color:var(--text-dim);
+    font-size:13.5px;
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  .layer li{margin-bottom:6px;}
+  .layer.blue{border-top:2px solid var(--blue);}
+  .layer.accent{border-top:2px solid var(--accent);}
+  .layer.teal{border-top:2px solid var(--teal);}
+
+  .arrow-down{
+    display:flex;
+    justify-content:center;
+    color:var(--text-faint);
+    font-size:20px;
+    margin:4px 0 32px;
+  }
+
+  /* ---- 六个月时间线 ---- */
+  section.timeline{margin-bottom:56px;}
+  .stage-principle{margin:0 0 18px;padding:14px 16px;border-left:3px solid var(--accent);background:var(--panel);font-size:14px;line-height:1.7;}
+  .stage-flow{display:grid;grid-template-columns:1fr auto 1fr;align-items:stretch;gap:12px;margin:0 0 26px;}
+  .stage-flow-card{border:1px solid var(--border);padding:13px 15px;background:var(--panel)}
+  .stage-flow-card b{display:block;color:var(--accent);font-size:15px;margin-bottom:5px}.stage-flow-card span{font-size:13px;color:var(--text-dim);line-height:1.65}.stage-flow-arrow{align-self:center;color:var(--accent);font-size:20px}
+  .stage-detail{padding-top:12px;border-top:1px solid var(--border);margin-top:12px}.stage-detail:first-of-type{border-top:0;padding-top:0;margin-top:0}.stage-detail .k{margin-bottom:5px}.stage-detail .v{line-height:1.65}.stage-list{margin:0;padding-left:17px;font-size:13px;line-height:1.7;color:var(--text-dim)}
+  .reference-tag{color:var(--amber);font:11px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;border:1px solid var(--amber);padding:2px 5px;margin-left:6px}
+  @media(max-width:640px){.stage-flow{grid-template-columns:1fr}.stage-flow-arrow{display:none}.stage-detail{padding-top:10px;margin-top:10px}}
+  h2{
+    font-size:19px;
+    margin:0 0 4px;
+    font-weight:600;
+  }
+  h2 + .desc{
+    color:var(--text-dim);
+    font-size:13.5px;
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    margin:0 0 24px;
+  }
+
+  .months{
+    display:flex;
+    flex-direction:column;
+  }
+  .month-row{
+    display:grid;
+    grid-template-columns:64px 1fr;
+    column-gap:20px;
+    position:relative;
+  }
+  .month-row .spine{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+  .month-row .dot{
+    width:34px;height:34px;
+    border-radius:50%;
+    background:var(--panel-2);
+    border:1px solid var(--border);
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:var(--text-dim);
+    flex-shrink:0;
+    z-index:1;
+  }
+  .month-row.checkpoint .dot{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#14171c;
+    font-weight:700;
+  }
+  .month-row .line{
+    width:1px;
+    flex:1;
+    background:var(--border);
+    min-height:20px;
+  }
+  .month-row:last-child .line{display:none;}
+  .month-card{
+    background:var(--panel);
+    border:1px solid var(--border);
+    padding:18px 20px;
+    margin-bottom:20px;
+  }
+  .month-card .m-title{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-bottom:10px;
+  }
+  .month-card .m-title strong{
+    font-size:15.5px;
+  }
+  .tag{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:11.5px;
+    padding:3px 9px;
+    border:1px solid var(--border);
+    color:var(--text-dim);
+  }
+  .tag.check{color:var(--accent);border-color:var(--accent);}
+  .grid2{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:14px;
+  }
+  @media (max-width:600px){ .grid2{grid-template-columns:1fr;} }
+  .field{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:13px;
+  }
+  .field .k{
+    color:var(--text-faint);
+    font-size:11.5px;
+    margin-bottom:3px;
+  }
+  .field .v{color:var(--text-dim);}
+
+  /* ---- 决策矩阵 ---- */
+  section.matrix{margin-bottom:56px;}
+  .matrix-outer{
+    display:grid;
+    grid-template-columns:auto 1fr;
+    gap:0;
+  }
+  .matrix-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    grid-template-rows:auto auto;
+    gap:1px;
+    background:var(--border);
+    border:1px solid var(--border);
+  }
+  .cell{
+    background:var(--panel);
+    padding:18px;
+    min-height:110px;
+  }
+  .cell h4{
+    margin:0 0 6px;
+    font-size:14px;
+  }
+  .cell p{
+    margin:0;
+    font-size:12.5px;
+    color:var(--text-dim);
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  .cell.keep{border-top:2px solid var(--green);}
+  .cell.hold{border-top:2px solid var(--teal);}
+  .cell.watch{border-top:2px solid var(--amber);}
+  .cell.cut{border-top:2px solid var(--red);}
+  .axis-label{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:11.5px;
+    color:var(--text-faint);
+    text-align:center;
+    padding:8px 0;
+  }
+
+  /* ---- 曲线四档 ---- */
+  section.curve{margin-bottom:56px;}
+  .curve-rows{display:flex;flex-direction:column;gap:10px;}
+  .curve-row{
+    display:grid;
+    grid-template-columns:120px 1fr auto;
+    align-items:center;
+    gap:16px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    padding:14px 18px;
+  }
+  @media (max-width:620px){
+    .curve-row{grid-template-columns:1fr;}
+  }
+  .curve-name{
+    font-size:14px;
+    font-weight:600;
+    display:flex;
+    align-items:center;
+    gap:8px;
+  }
+  .swatch{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+  .curve-shape{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:13px;
+    color:var(--text-dim);
+  }
+  .curve-verdict{
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-size:12px;
+    color:var(--text-faint);
+    white-space:nowrap;
+  }
+
+  footer{
+    color:var(--text-faint);
+    font-size:12px;
+    font-family: -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    border-top:1px solid var(--border);
+    padding-top:20px;
+  }
+
+  /* ---- 页面内编辑工具 ---- */
+  .visual-editor-toolbar{
+    position:fixed;
+    z-index:1000;
+    top:max(16px, env(safe-area-inset-top, 0px));
+    right:16px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    max-width:calc(100vw - 32px);
+    padding:8px;
+    background:color-mix(in srgb, var(--panel) 94%, transparent);
+    border:1px solid var(--border);
+    border-radius:10px;
+    box-shadow:0 8px 24px rgba(0,0,0,.18);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    backdrop-filter:blur(10px);
+  }
+  .visual-editor-toolbar button{
+    appearance:none;
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:6px 9px;
+    background:var(--panel-2);
+    color:var(--text);
+    font:inherit;
+    font-size:12px;
+    line-height:1.2;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .visual-editor-toolbar button:hover{border-color:var(--accent);}
+  .visual-editor-toolbar button[aria-pressed="true"]{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#1c1a16;
+  }
+  .visual-editor-toolbar button:disabled{opacity:.45;cursor:not-allowed;}
+  .visual-editor-status{
+    position:absolute;
+    right:8px;
+    top:calc(100% + 7px);
+    padding:5px 8px;
+    border-radius:5px;
+    background:var(--panel);
+    border:1px solid var(--border);
+    color:var(--text-dim);
+    font-size:11px;
+    opacity:0;
+    transform:translateY(-3px);
+    pointer-events:none;
+    transition:opacity .18s, transform .18s;
+  }
+  .visual-editor-status.show{opacity:1;transform:translateY(0);}
+  .visual-editor-text{outline:0;}
+  .is-visual-editing .visual-editor-text[data-visual-editable]{
+    cursor:text;
+    border-radius:3px;
+    box-shadow:inset 0 -1px 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  .is-visual-editing .visual-editor-text[data-visual-editable]:hover,
+  .is-visual-editing .visual-editor-text[data-visual-editable]:focus{
+    background:color-mix(in srgb, var(--accent) 13%, transparent);
+    box-shadow:inset 0 -1px 0 var(--accent), 0 0 0 2px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  @media (max-width:620px){
+    .visual-editor-toolbar{left:10px;right:10px;justify-content:space-between;gap:4px;padding:6px;}
+    .visual-editor-toolbar button{padding:6px 7px;font-size:11px;}
+    .wrap{padding-top:88px;}
+  }
+
+  /* ---- BD 能力清单打分工具 ---- */
+  .bd-tool{margin:0 0 56px;border-top:1px solid var(--border);padding-top:42px;}
+  .bd-tool-head{display:flex;align-items:end;justify-content:space-between;gap:18px;margin-bottom:20px;}
+  .bd-tool-head .desc{margin:0;color:var(--text-dim);font:13.5px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .bd-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(310px,.8fr);gap:16px;}
+  .bd-card{background:var(--panel);border:1px solid var(--border);padding:20px;}
+  .bd-card h3{margin:0 0 14px;font-size:15px;}
+  .bd-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+  .bd-field{display:flex;flex-direction:column;gap:5px;font:12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--text-dim);}
+  .bd-field.wide{grid-column:1 / -1;}
+  .bd-field input,.bd-field select,.bd-new input,.bd-thresholds input{
+    width:100%;min-height:34px;padding:7px 8px;border:1px solid var(--border);border-radius:4px;background:var(--panel-2);color:var(--text);font:13px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  .bd-actions{display:flex;gap:8px;align-items:end;flex-wrap:wrap;}
+  .bd-action{border:1px solid var(--border);border-radius:4px;background:var(--panel-2);color:var(--text);padding:8px 10px;font:12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;cursor:pointer;}
+  .bd-action:hover{border-color:var(--accent);}
+  .bd-action.primary{background:var(--accent);border-color:var(--accent);color:#1c1a16;}
+  .bd-new{display:grid;grid-template-columns:1fr 1fr 1.2fr auto;gap:8px;margin-bottom:16px;}
+  .bd-thresholds{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:16px;}
+  .bd-thresholds label{display:block;color:var(--text-faint);font:11px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .bd-thresholds input{margin-top:4px;}
+  .bd-month-tabs{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-bottom:16px;}
+  .bd-month-tabs button{border:1px solid var(--border);background:transparent;color:var(--text-dim);padding:7px 3px;font:12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;cursor:pointer;}
+  .bd-month-tabs button.active{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent);}
+  .bd-checklist{display:flex;flex-direction:column;border-top:1px solid var(--border);}
+  .bd-check{display:grid;grid-template-columns:20px 1fr auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font:13px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--text-dim);cursor:pointer;}
+  .bd-check input,.bd-manual input{accent-color:var(--accent);width:16px;height:16px;margin:0;}
+  .bd-check .bd-index{color:var(--text-faint);font-size:11px;}
+  .bd-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 0 0;}
+  .bd-rate{font:600 24px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--accent);}
+  .bd-badge{padding:5px 8px;border:1px solid currentColor;border-radius:4px;font:12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .bd-badge.green{color:var(--green)} .bd-badge.blue{color:var(--blue)} .bd-badge.yellow{color:var(--amber)} .bd-badge.red{color:var(--red)} .bd-badge.muted{color:var(--text-faint)}
+  .bd-manual{display:flex;align-items:center;gap:8px;margin-top:12px;color:var(--text-dim);font:12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .bd-chart-wrap{position:relative;min-height:326px;border:1px solid var(--border);background:var(--panel-2);}
+  .bd-chart{display:block;width:100%;height:326px;}
+  .bd-chart-note{margin:10px 0 0;color:var(--text-faint);font:12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .bd-empty{padding:32px 0;color:var(--text-faint);font:13px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  @media (max-width:760px){.bd-grid{grid-template-columns:1fr}.bd-thresholds{grid-template-columns:repeat(2,1fr)}.bd-new{grid-template-columns:1fr 1fr}.bd-new .bd-action{grid-column:1 / -1}.bd-tool-head{display:block}.bd-tool-head .desc{margin-top:4px}}
+  @media (max-width:430px){.bd-fields{grid-template-columns:1fr}.bd-field.wide{grid-column:auto}.bd-new{grid-template-columns:1fr}.bd-thresholds{grid-template-columns:1fr}.bd-month-tabs{grid-template-columns:repeat(3,1fr)}}
+
+  /* ---- 管理简报五分页 ---- */
+  body.app-mode #editable-content > :not(#management-app){display:none;}
+  body:not(.app-mode):not(.method-mode) #management-app{display:none;}
+  body.method-mode #manager-views{display:none;}
+  body.app-mode .wrap{max-width:1240px;padding-top:96px;}
+  .manager-nav{position:fixed;z-index:900;top:0;left:0;right:0;display:flex;justify-content:center;gap:4px;padding:10px 16px;background:color-mix(in srgb,var(--bg) 94%,transparent);border-bottom:1px solid var(--border);backdrop-filter:blur(10px);font:13px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;}
+  .manager-nav button{border:0;border-bottom:2px solid transparent;background:transparent;color:var(--text-dim);padding:8px 11px;cursor:pointer;font:inherit;white-space:nowrap;}
+  .manager-nav button.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .manager-view{display:none}.manager-view.active{display:block}.manager-title{margin:0 0 4px;font-size:26px}.manager-sub{margin:0 0 26px;color:var(--text-dim);font:13px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}.brief-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}.kpi-card{background:var(--panel);border:1px solid var(--border);padding:14px}.kpi-card b{display:block;color:var(--accent);font:600 22px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}.kpi-card span{color:var(--text-faint);font:12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}.manager-card{background:var(--panel);border:1px solid var(--border);padding:18px}.manager-card h3{margin:0 0 10px;font-size:15px}.chart-box{position:relative;height:290px;min-height:290px;overflow:hidden}.chart-box canvas{display:block}.warning{border-left:3px solid var(--red);margin-bottom:10px}.warning.amber{border-left-color:var(--amber)}.quiet{color:var(--text-faint);font:13px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}.issue{padding:12px 0;border-bottom:1px solid var(--border);font:13px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}.issue:last-child{border:0}.issue b{color:var(--text)}.progress{height:7px;background:var(--border);margin-top:8px}.progress i{display:block;height:100%;background:var(--green)}.progress i.low{background:var(--red)}.progress i.mid{background:var(--amber)}.manager-table{width:100%;border-collapse:collapse;font:12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}.manager-table th,.manager-table td{padding:10px 8px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap}.manager-table th[data-sort],.manager-table th[data-pool-sort]{cursor:pointer}.manager-table th{color:var(--text-faint);font-weight:500}.filters{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 16px}.filters select,.filters input{min-height:34px;padding:7px;border:1px solid var(--border);border-radius:4px;background:var(--panel);color:var(--text);font:13px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}.two-col{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}.growth-canvas{width:100%;height:330px;background:var(--panel);border:1px solid var(--border)}.timeline-item{position:relative;margin-left:9px;padding:0 0 20px 20px;border-left:1px solid var(--border);font:13px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}.timeline-item:before{content:"";position:absolute;left:-5px;top:4px;width:8px;height:8px;border-radius:50%;background:var(--accent)}.heatmap{display:grid;grid-template-columns:repeat(15,1fr);gap:4px}.heatmap i{display:block;aspect-ratio:1;border-radius:1px;background:var(--border)}.heatmap i.active{background:var(--green)}.link-button{border:0;background:transparent;color:var(--accent);padding:0;cursor:pointer;font:inherit}@media(max-width:760px){.manager-nav{justify-content:flex-start;overflow-x:auto}.brief-grid,.two-col,.kpi-row{grid-template-columns:1fr}.manager-card{padding:14px}.manager-title{font-size:22px}.manager-table{display:block;overflow-x:auto}.editor-toolbar{display:none}}
+  .pool-tier-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:16px 0}.pool-tier{border:1px solid var(--border);padding:14px;background:var(--panel)}.pool-tier b{display:block;color:var(--accent);font:600 22px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}.pool-tier span{display:block;font:12px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;color:var(--text-faint);margin-top:4px}.pool-tier .progress{margin-top:10px}.attention-tags{display:flex;gap:5px;flex-wrap:wrap;margin:5px 0}.attention-tag{border:1px solid var(--amber);color:var(--amber);padding:2px 5px;font:11px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}.attention-tag.red{border-color:var(--red);color:var(--red)}.attention-note{max-width:400px;white-space:normal!important;line-height:1.5;color:var(--text-dim)}@media(max-width:760px){.pool-tier-grid{grid-template-columns:1fr}.attention-note{max-width:260px}}
+  .growth-condition-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:10px 0 0}.growth-condition{display:flex;align-items:flex-start;gap:8px;border:1px solid var(--border);padding:9px 10px;color:var(--text-dim);font:13px -apple-system,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.45}.growth-condition input{margin-top:2px;accent-color:var(--accent)}.growth-condition:has(input:checked){border-color:var(--accent);color:var(--text);background:color-mix(in srgb,var(--accent) 7%,transparent)}@media(max-width:760px){.growth-condition-list{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap" id="editable-content">
+
+  <header class="page">
+    <p class="eyebrow">Ben · 团队扩编与筛选体系</p>
+    <h1>从"目标不清晰"到可执行框架</h1>
+    <p class="sub">组织杠杆 → 六个月阶段性目标 → 结果导向筛选逻辑。核心原则：不做主观能力单独打分，结果和曲线用于阶段诊断。</p>
+  </header>
+
+  <div class="goal">
+    <div class="label">总目标</div>
+    <p>用组织杠杆把 Gross 从 50万/月 推向更高水平，同时让"复制产能"从靠运气变成有方法论。</p>
+  </div>
+
+  <div class="layers">
+    <div class="layer blue">
+      <div class="num">第一层 · 入口</div>
+      <h3>组织杠杆</h3>
+      <ul>
+        <li>公司20个空缺，争取8–10个进自己团队</li>
+        <li>10月国庆后新 HR 到岗，招聘节奏以此为准</li>
+      </ul>
+    </div>
+    <div class="layer accent">
+      <div class="num">第二层 · 过程</div>
+      <h3>六个月阶段性目标</h3>
+      <ul>
+        <li>六个月，六个台阶，每级有结果指标</li>
+        <li>第3月挂钩公司硬指标（5000美金）</li>
+        <li>第6月挂钩团队中上水平（8个IB/CPA）</li>
+      </ul>
+    </div>
+    <div class="layer teal">
+      <div class="num">第三层 · 标准</div>
+      <h3>结果层</h3>
+      <ul>
+        <li>每个阶段该拿出什么具体结果，数据自己说话</li>
+        <li>看环比曲线斜率，不看单月绝对值</li>
+        <li>下滑比低位更危险，优先介入</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="arrow-down">↓</div>
+
+  <section class="timeline">
+    <h2>六个月时间线</h2>
+    <p class="desc">阶段目标 → 达成条件 → 未达标优先排查 → 管理处理动作</p>
+    <div class="stage-principle"><strong>结果决定阶段是否达标，达成条件用于解释为什么达标或未达标。</strong><br>当前标准基于现有团队经验建立，后续会根据真实新人数据持续校准，不视为永久固定规则。</div>
+    <div class="stage-flow"><div class="stage-flow-card"><b>前3个月 · 生存能力验证</b><span>第1月会不会开发 · 第2月会不会转化 · 第3月会不会兑现结果</span></div><div class="stage-flow-arrow">→</div><div class="stage-flow-card"><b>后3个月 · 成长能力验证</b><span>第4月能不能持续增长 · 第5月能不能独立 · 第6月能不能形成稳定产能</span></div></div>
+
+    <div class="months">
+
+      <div class="month-row checkpoint">
+        <div class="spine"><div class="dot">1</div><div class="line"></div></div>
+        <div class="month-card">
+          <div class="m-title"><strong>第1月 · 意向池建立</strong><span class="tag check">预警节点</span></div>
+          <div class="stage-detail"><div class="k">阶段目标</div><div class="v">意向客户池 ≥ 20个</div></div>
+          <div class="stage-detail"><div class="k">达成条件</div><ul class="stage-list"><li>稳定开发量，能初步判断客户价值</li><li>基础开场、产品与合作知识能够正常回答</li><li>有价值客户录入 CRM 并持续跟进</li></ul></div>
+          <div class="stage-detail"><div class="k">未达标优先排查</div><div class="v">开发量、账号/渠道、意向定义、开场有效对话、客户筛选方式。</div></div>
+          <div class="stage-detail"><div class="k">处理动作</div><div class="v">先纠正开发量与筛选方式；主管抽查前期动作和客户样本。意向数远低于目标且说不出原因，进入提前预警。</div></div>
+        </div>
+      </div>
+
+      <div class="month-row">
+        <div class="spine"><div class="dot">2</div><div class="line"></div></div>
+        <div class="month-card">
+          <div class="m-title"><strong>第2月 · 转化冒头</strong></div>
+          <div class="stage-detail"><div class="k">阶段目标</div><div class="v">从意向池中转化出 3-4 个可继续推进的 IB/CPA</div></div>
+          <div class="stage-detail"><div class="k">达成条件</div><ul class="stage-list"><li>持续跟进，不只做首次触达</li><li>识别真实合作需求，处理基础异议</li><li>推动注册、开户或合作下一步</li></ul></div>
+          <div class="stage-detail"><div class="k">未达标优先排查</div><div class="v">第1月意向质量、跟进频率、是否停在聊天阶段、推进动作与基础异议处理。</div></div>
+          <div class="stage-detail"><div class="k">处理动作</div><div class="v">抽查重点客户推进路径；要求说明客户卡点和下一步。连续有意向但无法转化，进入重点观察。</div></div>
+        </div>
+      </div>
+
+      <div class="month-row checkpoint">
+        <div class="spine"><div class="dot">3</div><div class="line"></div></div>
+        <div class="month-card">
+          <div class="m-title"><strong>第3月 · 试用期决胜局</strong><span class="tag check">硬指标节点</span></div>
+          <div class="stage-detail"><div class="k">阶段目标</div><div class="v">Gross ≥ 5,000 USD → 正常转正；Gross 未达标但 Master IB ≥ 6 → 可考虑延长试用；两项均明显未达标 → 淘汰。</div></div>
+          <div class="stage-detail"><div class="k">达成条件</div><ul class="stage-list"><li>把 IB/CPA 真正转成业务结果并推动实际入金</li><li>判断客户质量，常见问题基本独立处理</li><li>不再依赖主管逐条给跟进方案</li></ul></div>
+          <div class="stage-detail"><div class="k">未达标优先排查</div><div class="v">有 IB 无入金、客户质量低、合作方无真实客户、推进能力不足或主管介入依赖过高。</div></div>
+          <div class="stage-detail"><div class="k">处理动作</div><div class="v">第一个硬筛选节点；不因态度或努力无限延长。延长试用必须已有业务能力信号，例如 Master IB 明显达标。</div></div>
+        </div>
+      </div>
+
+      <div class="month-row">
+        <div class="spine"><div class="dot">4</div><div class="line"></div></div>
+        <div class="month-card">
+          <div class="m-title"><strong>第4月 · 稳定产出</strong></div>
+          <div class="stage-detail"><div class="k">阶段目标 <span class="reference-tag">V1参考基准，可校准</span></div><div class="v">Gross 明显高于 5,000 USD，暂定参考区间 10,000-30,000 USD。</div></div>
+          <div class="stage-detail"><div class="k">达成条件</div><ul class="stage-list"><li>持续获取新客户/新 IB，不完全依赖存量</li><li>能独立处理常见问题，形成个人开发节奏</li><li>开始有重复成功的迹象</li></ul></div>
+          <div class="stage-detail"><div class="k">未达标优先排查</div><div class="v">是否只靠旧客户释放、新增 Pipeline 下滑、方法停滞、无法自主调整，或 Gross 长期停在转正线附近。</div></div>
+          <div class="stage-detail"><div class="k">处理动作</div><div class="v">较第3月无明显提升，进行一对一诊断；不急于淘汰，但要确认增长瓶颈。</div></div>
+        </div>
+      </div>
+
+      <div class="month-row">
+        <div class="spine"><div class="dot">5</div><div class="line"></div></div>
+        <div class="month-card">
+          <div class="m-title"><strong>第5月 · 向中上水平靠拢</strong></div>
+          <div class="stage-detail"><div class="k">阶段目标 <span class="reference-tag">V1参考基准，可校准</span></div><div class="v">向团队中上水平靠拢：新增 IB/CPA 逐渐接近 8 个/月，Gross 稳定增长。</div></div>
+          <div class="stage-detail"><div class="k">达成条件</div><ul class="stage-list"><li>稳定开发、提高客户质量、同时维护多个 Pipeline</li><li>能自己调整方法，主管介入频率明显下降</li></ul></div>
+          <div class="stage-detail"><div class="k">未达标优先排查</div><div class="v">是否仍需大量手把手帮助、只等主管方案、新增 IB/CPA 停滞、Gross 无增长或方法过于单一。</div></div>
+          <div class="stage-detail"><div class="k">处理动作</div><div class="v">结果稳定但成长慢，可归入稳定保留层；始终高度依赖主管，则不再作为重点培养对象。</div></div>
+        </div>
+      </div>
+
+      <div class="month-row checkpoint">
+        <div class="spine"><div class="dot">6</div></div>
+        <div class="month-card">
+          <div class="m-title"><strong>第6月 · 定档</strong><span class="tag check">分层节点</span></div>
+          <div class="stage-detail"><div class="k">阶段目标 <span class="reference-tag">V1参考基准，可校准</span></div><div class="v">完成阶段性定档：新增 IB/CPA 达到或接近 8 个/月，Gross 进入团队稳定产出区间。</div></div>
+          <div class="stage-detail"><div class="k">达成条件</div><ul class="stage-list"><li>结果持续、能重复有效打法，不依赖单一客户</li><li>开发困难能自行调整，具备稳定 BD 基础</li></ul></div>
+          <div class="stage-detail"><div class="k">未达标优先排查</div><div class="v">绝对产能不足还是成长速度不足；稳定低产还是持续下滑；是否已到个人能力上限。</div></div>
+          <div class="stage-detail"><div class="k">处理动作</div><div class="v">重点培养层：持续增长且独立性强；稳定保留层：稳定产出但成长一般；调整/轮换层：长期低产、持续下滑或无法独立解决问题。</div></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section class="matrix">
+    <h2>第3月判断矩阵</h2>
+    <p class="desc">Gross 与 Master IB 两条硬指标交叉判断，不引入主观评价打分</p>
+
+    <div class="matrix-grid">
+      <div class="cell keep">
+        <h4>转正</h4>
+        <p>Gross ≥ 5000美金</p>
+      </div>
+      <div class="cell hold">
+        <h4>延长试用期</h4>
+        <p>Gross 未达标，但 Master IB ≥ 6个</p>
+      </div>
+      <div class="cell cut">
+        <h4>淘汰</h4>
+        <p>Gross 未达标，Master IB &lt; 6个</p>
+      </div>
+      <div class="cell watch">
+        <h4>（预留）</h4>
+        <p>其余组合按具体情况一对一判断</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="curve">
+    <h2>结果曲线参考档</h2>
+    <p class="desc">结果曲线用于观察增长斜率和诊断方向，不替代阶段目标，也不构成主观评分。</p>
+
+    <div class="curve-rows">
+      <div class="curve-row">
+        <div class="curve-name"><span class="swatch" style="background:var(--green)"></span>优秀档</div>
+        <div class="curve-shape">1 → 3–4 → 7–8 个IB（接近翻倍节奏）</div>
+        <div class="curve-verdict">重点投入，未来第一梯队</div>
+      </div>
+      <div class="curve-row">
+        <div class="curve-name"><span class="swatch" style="background:var(--teal)"></span>合格档</div>
+        <div class="curve-shape">1 → 2 → 3–4 个IB（持续增长，斜率较缓）</div>
+        <div class="curve-verdict">正常保留，继续观察</div>
+      </div>
+      <div class="curve-row">
+        <div class="curve-name"><span class="swatch" style="background:var(--amber)"></span>临界档</div>
+        <div class="curve-shape">1 → 1–2 → 2 个IB（接近停滞）</div>
+        <div class="curve-verdict">介入了解原因，给明确改进窗口</div>
+      </div>
+      <div class="curve-row">
+        <div class="curve-name"><span class="swatch" style="background:var(--red)"></span>危险档</div>
+        <div class="curve-shape">1 → 1 → 0–1 个IB（持平或下滑）</div>
+        <div class="curve-verdict">优先诊断与调整，下滑比低位更需优先处理</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="management-app" data-template-revision="20260924-customer-pool-v2" aria-label="团队管理系统">
+    <nav class="manager-nav" aria-label="团队管理导航">
+      <button type="button" data-page="brief" class="active">首页</button><button type="button" data-page="results">结果看板</button><button type="button" data-page="growth">成长曲线</button><button type="button" data-page="pool">客户池</button><button type="button" data-page="issues">问题日志</button><button type="button" data-page="framework">方法论</button>
+    </nav>
+    <div id="manager-views"></div>
+  </section>
+
+  <footer>
+    Ben 团队组织与结果层体系 · 待校准：第4-6月真实团队基准与阶段条件诊断细则
+  </footer>
+
+ </div>
+<script type="text/plain" data-removed-feature="visual-editor">
+(() => {
+  'use strict';
+
+  const root = document.getElementById('editable-content');
+  const toggle = document.getElementById('editor-toggle');
+  const saveButton = document.getElementById('editor-save');
+  const undoButton = document.getElementById('editor-undo');
+  const exportButton = document.getElementById('editor-export');
+  const resetButton = document.getElementById('editor-reset');
+  const status = document.getElementById('editor-status');
+  const storageKey = `visual-editor:${location.pathname || document.title}`;
+  const history = [];
+  const maxHistory = 30;
+  let editing = false;
+  let focusSnapshot = null;
+  let initialHTML = '';
+  let statusTimer;
+
+  function showStatus(message) {
+    status.textContent = message;
+    status.classList.add('show');
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => status.classList.remove('show'), 1800);
+  }
+
+  function sanitizeEditableText(text) {
+    return text.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ');
+  }
+
+  function prepareEditableText() {
+    const existing = root.querySelectorAll('[data-visual-editable]');
+    if (existing.length) {
+      existing.forEach(element => element.classList.add('visual-editor-text'));
+      return;
+    }
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    let node;
+    while ((node = walker.nextNode())) {
+      const parent = node.parentElement;
+      if (!parent || !node.nodeValue.trim() || parent.closest('script, style, .visual-editor-toolbar, button, option, select, textarea')) continue;
+      textNodes.push(node);
+    }
+    textNodes.forEach(textNode => {
+      const editable = document.createElement('span');
+      editable.className = 'visual-editor-text';
+      editable.dataset.visualEditable = 'true';
+      editable.textContent = textNode.nodeValue;
+      textNode.parentNode.replaceChild(editable, textNode);
+    });
+  }
+
+  function setEditing(enabled) {
+    editing = enabled;
+    document.body.classList.toggle('is-visual-editing', enabled);
+    root.querySelectorAll('[data-visual-editable]').forEach(element => {
+      // 使用标准 true，确保 Chrome、Safari 等本地浏览器都能直接编辑；粘贴事件会统一转为纯文本。
+      element.contentEditable = enabled ? 'true' : 'false';
+      element.spellcheck = enabled;
+    });
+    toggle.textContent = enabled ? '退出编辑' : '编辑模式';
+    toggle.setAttribute('aria-pressed', String(enabled));
+    if (enabled) showStatus('可直接点击文字修改');
+  }
+
+  function updateUndoButton() {
+    undoButton.disabled = history.length === 0;
+  }
+
+  function pushHistory(snapshot) {
+    if (!snapshot || snapshot === root.innerHTML || history[history.length - 1] === snapshot) return;
+    history.push(snapshot);
+    if (history.length > maxHistory) history.shift();
+    updateUndoButton();
+  }
+
+  function undo() {
+    const snapshot = history.pop();
+    if (!snapshot) return;
+    root.innerHTML = snapshot;
+    prepareEditableText();
+    setEditing(editing);
+    updateUndoButton();
+    showStatus('已撤销上一次修改');
+  }
+
+  function save() {
+    try {
+      localStorage.setItem(storageKey, root.innerHTML);
+      showStatus('已保存到此浏览器');
+    } catch (error) {
+      showStatus('无法保存，请检查浏览器存储权限');
+    }
+  }
+
+  function restoreSavedContent() {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      // 缓存版本必须与当前页面结构一致；旧内容不会覆盖已更新的框架文案。
+      if (saved && saved.includes('id="bd-capability-tool"') && saved.includes('data-template-revision="20260924-customer-pool-v2"')) root.innerHTML = saved;
+    } catch (error) {
+      // localStorage 不可用时仍保持页面可编辑。
+    }
+  }
+
+  function reset() {
+    if (!confirm('确定恢复到此文件最初打开时的内容吗？已保存的内容也会被清除。')) return;
+    if (!confirm('再确认一次：恢复后无法通过“撤销”找回当前内容。')) return;
+    root.innerHTML = initialHTML;
+    prepareEditableText();
+    history.length = 0;
+    updateUndoButton();
+    try { localStorage.removeItem(storageKey); } catch (error) { /* 忽略存储限制 */ }
+    setEditing(false);
+    showStatus('已恢复初始内容');
+  }
+
+  function exportHTML() {
+    const wasEditing = editing;
+    setEditing(false);
+    const clone = document.documentElement.cloneNode(true);
+    const cloneRoot = clone.querySelector('#editable-content');
+    cloneRoot.innerHTML = root.innerHTML;
+    clone.querySelectorAll('[contenteditable]').forEach(element => element.removeAttribute('contenteditable'));
+    clone.querySelector('body').classList.remove('is-visual-editing');
+    const cloneToggle = clone.querySelector('#editor-toggle');
+    cloneToggle.textContent = '编辑模式';
+    cloneToggle.setAttribute('aria-pressed', 'false');
+    const content = '<!DOCTYPE html>\n' + clone.outerHTML;
+    const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+    const link = document.createElement('a');
+    const sourceName = document.title || '可视化编辑页面';
+    link.href = URL.createObjectURL(blob);
+    link.download = `${sourceName}-已编辑.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+    setEditing(wasEditing);
+    showStatus('已导出完整 HTML 文件');
+  }
+
+  root.addEventListener('focusin', event => {
+    if (editing && event.target.matches('[data-visual-editable]')) focusSnapshot = root.innerHTML;
+  });
+  root.addEventListener('focusout', event => {
+    if (editing && event.target.matches('[data-visual-editable]') && focusSnapshot !== root.innerHTML) {
+      pushHistory(focusSnapshot);
+    }
+    focusSnapshot = null;
+  });
+  root.addEventListener('paste', event => {
+    if (!editing || !event.target.matches('[data-visual-editable]')) return;
+    event.preventDefault();
+    document.execCommand('insertText', false, sanitizeEditableText(event.clipboardData.getData('text/plain')));
+  });
+  root.addEventListener('keydown', event => {
+    if (editing && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+      event.preventDefault();
+      undo();
+    }
+  });
+
+  prepareEditableText();
+  initialHTML = root.innerHTML;
+  restoreSavedContent();
+  prepareEditableText();
+  toggle.addEventListener('click', () => setEditing(!editing));
+  saveButton.addEventListener('click', save);
+  undoButton.addEventListener('click', undo);
+  exportButton.addEventListener('click', exportHTML);
+  resetButton.addEventListener('click', reset);
+  updateUndoButton();
+})();
+</script>
+<script type="text/plain" data-removed-feature="standalone-bd-tool">
+(() => {
+  'use strict';
+  const STORAGE = 'ben-team-framework:bd-capability:v1';
+  const STAGE_CONFIG = [
+    {name:'意向池建立',goal:'意向客户池 ≥ 20个',shortGoal:'意向客户池 ≥ 20个',conditions:['保持稳定开发量','初步判断客户是否值得继续跟','基础开场和沟通能力过关','基础产品/合作知识能够正常回答','有价值客户录入 CRM 并持续跟进'],diagnosis:['开发动作量是否不足','账号/渠道是否影响正常开发','意向客户定义是否过严或过松','开场话术是否无法建立有效对话','是否不会筛选客户'],action:'纠正开发量与筛选方式；抽查前期动作和客户样本。意向数远低于目标且说不出原因，进入提前预警。'},
+    {name:'转化阶段',goal:'转化出 3-4 个可继续推进的 IB/CPA',shortGoal:'IB/CPA 转化 3-4个',conditions:['持续跟进，不只做首次触达','识别真实合作需求','处理基础异议','推动注册/开户/合作下一步','判断客户优先级'],diagnosis:['第1月意向池质量是否虚高','跟进频率是否不足','客户是否长期停留在聊天阶段','是否缺乏推进动作','是否无法处理常见异议'],action:'抽查重点客户推进路径，要求说明客户卡点及下一步；连续有意向但无法转化，进入重点观察。'},
+    {name:'结果兑现',goal:'Gross ≥ 5,000 USD；或 Master IB ≥ 6 可考虑延长试用',shortGoal:'Gross 5,000 USD / Master IB 6',conditions:['把 IB/CPA 转成业务结果','推动客户实际入金','判断客户质量','常见问题基本独立处理','不依赖主管逐条给方案'],diagnosis:['有 IB 但没有入金','客户质量是否过低','合作方没有真实客户','客户推进能力不足','主管介入依赖是否过高'],action:'第一个硬筛选节点。延长试用必须已有业务能力信号，不因为态度或努力无限延长。'},
+    {name:'增长阶段',goal:'Gross 10,000-30,000 USD',shortGoal:'Gross 10k-30k',conditions:['持续获取新客户/新 IB','不完全依赖前3个月存量客户','独立处理常见问题','形成稳定个人开发节奏','开始具备重复成功迹象'],diagnosis:['是否只靠旧客户释放','新增 Pipeline 是否下降','是否出现方法停滞','遇到问题后能否自主调整','Gross 是否停在转正线附近'],action:'较第3月无明显提升，进行一对一诊断；不急于淘汰，但需确认增长瓶颈。',reference:true},
+    {name:'独立阶段',goal:'新增 IB/CPA 接近 8个/月，Gross 稳定增长',shortGoal:'新增 IB/CPA 接近 8个',conditions:['稳定开发','能自己调整方法','提高客户质量','同时维护多个 Pipeline','主管介入频率明显下降'],diagnosis:['是否仍需大量手把手帮助','是否只等待主管方案','新增 IB/CPA 是否停滞','Gross 是否没有增长','方法是否高度单一'],action:'稳定但成长慢，可归入稳定保留层；始终高度依赖主管，则不再作为重点培养对象。',reference:true},
+    {name:'阶段性定档',goal:'新增 IB/CPA 达到或接近 8个/月，Gross 进入稳定产出区间',shortGoal:'稳定产能 / 新增 IB/CPA 8个',conditions:['结果具有持续性','能重复有效打法','不依赖单一客户','面对开发困难能自行调整','具备稳定 BD 基础'],diagnosis:['绝对产能不够还是成长速度不足','稳定低产还是持续下滑','是否已达到个人能力上限'],action:'重点培养层：持续增长且独立性强；稳定保留层：稳定产出但成长一般；调整/轮换层：长期低产、持续下滑或无法独立解决问题。',reference:true}
+  ];
+  const CHECKLISTS = STAGE_CONFIG.map(stage => stage.conditions);
+  const DEFAULTS = {m3Gross:5000,m3IB:6,m4Gross:10000,m4GrossMax:30000,m5Gross:20000,m6Gross:30000,m6IB:8};
+  window.BEN_STAGE_CONFIG = STAGE_CONFIG;
+  const select = document.getElementById('bd-select');
+  const workspace = document.getElementById('bd-workspace');
+  const canvas = document.getElementById('bd-chart');
+  let state = {settings:{...DEFAULTS}, people:[], selectedId:null, activeMonth:1};
+
+  const freshMonth = index => ({checklist:Array(CHECKLISTS[index].length).fill(false),gross:'',masterIB:'',subIB:'',manualResult:null});
+  const freshPerson = (name, id, hireMonth) => ({id:`bd_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,name:name.trim(),employeeId:id.trim(),hireMonth,months:CHECKLISTS.map((_, i) => freshMonth(i))});
+  const number = value => Math.max(0, Number(value) || 0);
+  const escapeHTML = value => String(value).replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+  const currentPerson = () => state.people.find(person => person.id === state.selectedId);
+
+  function normalizedPerson(person) {
+    const safe = person && typeof person === 'object' ? person : {};
+    const months = CHECKLISTS.map((list, i) => {
+      const old = safe.months && safe.months[i] || {};
+      return {checklist:list.map((_, j) => Boolean(old.checklist && old.checklist[j])),gross:old.gross ?? '',masterIB:old.masterIB ?? '',subIB:old.subIB ?? '',manualResult:typeof old.manualResult === 'boolean' ? old.manualResult : null};
+    });
+    return {id:safe.id || `bd_${Date.now()}_${Math.random().toString(36).slice(2,7)}`,name:String(safe.name || '未命名BD'),employeeId:String(safe.employeeId || ''),hireMonth:String(safe.hireMonth || ''),months};
+  }
+  function load() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE));
+      if (!saved || !Array.isArray(saved.people)) return;
+      state.people = saved.people.map(normalizedPerson);
+      state.settings = {...DEFAULTS, ...(saved.settings || {})};
+      state.selectedId = state.people.some(p => p.id === saved.selectedId) ? saved.selectedId : state.people[0]?.id || null;
+      state.activeMonth = Math.min(6, Math.max(1, Number(saved.activeMonth) || 1));
+    } catch (error) { /* 损坏数据时保留空白工具 */ }
+  }
+  function save() {
+    try { localStorage.setItem(STORAGE, JSON.stringify(state)); } catch (error) { /* 存储不可用时仍可在当前页操作 */ }
+  }
+  function monthFromHire(hireMonth) {
+    if (!/^\d{4}-\d{2}$/.test(hireMonth || '')) return 1;
+    const [year, month] = hireMonth.split('-').map(Number);
+    return Math.min(6, Math.max(1, (new Date().getFullYear() - year) * 12 + (new Date().getMonth() + 1 - month) + 1));
+  }
+  function hasRecord(month) {
+    return month.checklist.some(Boolean) || number(month.gross) > 0 || number(month.masterIB) > 0 || number(month.subIB) > 0 || month.manualResult !== null;
+  }
+  function rate(monthIndex, person) {
+    const values = person.months[monthIndex].checklist;
+    return values.length ? Math.round(values.filter(Boolean).length / values.length * 100) : 0;
+  }
+  function achieved(monthIndex, month) {
+    if (monthIndex < 2) return month.manualResult === true;
+    const n = monthIndex + 1;
+    const grossTarget = number(state.settings[`m${n}Gross`]);
+    const ibTarget = number(state.settings[`m${n}IB`]);
+    return (grossTarget > 0 && number(month.gross) >= grossTarget) || (ibTarget > 0 && number(month.masterIB) >= ibTarget);
+  }
+  function monthThreeBadge(month) {
+    if (number(month.gross) >= number(state.settings.m3Gross)) return {text:'转正', tone:'green'};
+    if (number(month.masterIB) >= number(state.settings.m3IB)) return {text:'延长试用期', tone:'yellow'};
+    return {text:'淘汰', tone:'red'};
+  }
+  function portrait(monthIndex, person) {
+    const pct = rate(monthIndex, person);
+    const ok = achieved(monthIndex, person.months[monthIndex]);
+    if (pct >= 50 && ok) return {text:'稳定成长', tone:'green'};
+    if (pct >= 50) return {text:'过程具备 / 结果待兑现', tone:'blue'};
+    if (ok) return {text:'结果领先 / 待验证稳定性', tone:'yellow'};
+    return {text:'重点风险', tone:'red'};
+  }
+  function optionText(person) { return `${person.name}${person.employeeId ? ` · ${person.employeeId}` : ''}`; }
+  function renderPeople() {
+    select.innerHTML = state.people.length ? state.people.map(p => `<option value="${p.id}">${escapeHTML(optionText(p))}</option>`).join('') : '<option value="">暂无BD记录</option>';
+    select.value = state.selectedId || '';
+  }
+  function renderThresholds() {
+    document.querySelectorAll('[data-threshold]').forEach(input => { input.value = state.settings[input.dataset.threshold] ?? ''; });
+  }
+  function renderWorkspace() {
+    const person = currentPerson();
+    if (!person) { workspace.innerHTML = '<div class="bd-empty">先在上方新建一位 BD，即可开始记录。</div>'; drawChart(); return; }
+    const index = state.activeMonth - 1;
+    const month = person.months[index];
+    const pct = rate(index, person);
+    const portraitInfo = portrait(index, person);
+    const resultBadge = index === 2 ? monthThreeBadge(month) : null;
+    const stage = STAGE_CONFIG[index];
+    workspace.innerHTML = `
+      <h3>${escapeHTML(optionText(person))} · 第${state.activeMonth}月 · ${stage.name}</h3>
+      <div class="bd-month-tabs">${CHECKLISTS.map((_, i) => `<button type="button" data-month="${i + 1}" class="${state.activeMonth === i + 1 ? 'active' : ''}">第${i + 1}月</button>`).join('')}</div>
+      <div class="stage-principle"><strong>阶段目标：${stage.goal}</strong>${stage.reference ? ' <span class="reference-tag">V1参考基准，可校准</span>' : ''}<br><span class="quiet">达成条件用于诊断结果，不作为独立淘汰评分。</span></div>
+      <div class="bd-fields">
+        <label class="bd-field">Gross（美金）<input data-metric="gross" type="number" min="0" step="100" value="${month.gross}"></label>
+        <label class="bd-field">Master IB数量<input data-metric="masterIB" type="number" min="0" step="1" value="${month.masterIB}"></label>
+        <label class="bd-field wide">Sub IB数量（可选）<input data-metric="subIB" type="number" min="0" step="1" value="${month.subIB}"></label>
+      </div>
+      ${index < 2 ? `<label class="bd-manual"><input id="bd-manual-result" type="checkbox" ${month.manualResult === true ? 'checked' : ''}> 当月硬指标达标（第1-2月由主管人工判断）</label>` : ''}
+      <div class="bd-summary"><div><div class="bd-rate">${pct}%</div><div style="font:12px -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:var(--text-faint)">阶段条件完成度 ${month.checklist.filter(Boolean).length}/${month.checklist.length}</div></div><span class="bd-badge ${portraitInfo.tone}">${portraitInfo.text}</span>${resultBadge ? `<span class="bd-badge ${resultBadge.tone}">第3月：${resultBadge.text}</span>` : ''}</div>
+      <div class="stage-detail"><div class="k">未达标优先排查</div><div class="v">${stage.diagnosis.join('；')}</div></div>
+      <div class="stage-detail"><div class="k">管理处理动作</div><div class="v">${stage.action}</div></div>
+      <div class="bd-checklist">${CHECKLISTS[index].map((item, i) => `<label class="bd-check"><input type="checkbox" data-check="${i}" ${month.checklist[i] ? 'checked' : ''}><span>${item}</span><span class="bd-index">${i + 1}</span></label>`).join('')}</div>`;
+    workspace.querySelectorAll('[data-month]').forEach(button => button.addEventListener('click', () => { state.activeMonth = Number(button.dataset.month); save(); renderWorkspace(); }));
+    workspace.querySelectorAll('[data-check]').forEach(input => input.addEventListener('change', event => { person.months[index].checklist[Number(event.target.dataset.check)] = event.target.checked; save(); renderWorkspace(); }));
+    workspace.querySelectorAll('[data-metric]').forEach(input => input.addEventListener('change', event => { person.months[index][event.target.dataset.metric] = event.target.value; save(); renderWorkspace(); }));
+    const manual = workspace.querySelector('#bd-manual-result');
+    if (manual) manual.addEventListener('change', event => { person.months[index].manualResult = event.target.checked; save(); renderWorkspace(); });
+    drawChart();
+  }
+  function drawChart() {
+    const context = canvas.getContext('2d');
+    const box = canvas.getBoundingClientRect(); const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(box.width * dpr)); canvas.height = Math.round(326 * dpr); context.scale(dpr, dpr);
+    const width = box.width; const height = 326; const pad = {left:42,right:18,top:26,bottom:34}; const x0 = pad.left, y0 = pad.top, w = width-pad.left-pad.right, h = height-pad.top-pad.bottom;
+    const css = getComputedStyle(document.documentElement); const border = css.getPropertyValue('--border'); const dim = css.getPropertyValue('--text-faint'); const accent = css.getPropertyValue('--accent');
+    context.clearRect(0,0,width,height); context.fillStyle = 'rgba(76,175,125,.06)'; context.fillRect(x0,y0,w/2,h/2); context.fillStyle = 'rgba(91,155,217,.06)'; context.fillRect(x0+w/2,y0,w/2,h/2); context.fillStyle = 'rgba(217,154,62,.06)'; context.fillRect(x0,y0+h/2,w/2,h/2); context.fillStyle = 'rgba(201,100,95,.06)'; context.fillRect(x0+w/2,y0+h/2,w/2,h/2);
+    context.strokeStyle = border; context.lineWidth = 1; context.strokeRect(x0,y0,w,h); context.beginPath(); context.moveTo(x0+w/2,y0); context.lineTo(x0+w/2,y0+h); context.moveTo(x0,y0+h/2); context.lineTo(x0+w,y0+h/2); context.stroke();
+    context.fillStyle = dim; context.font = '11px -apple-system, PingFang SC, sans-serif'; context.fillText('结果达标',x0+4,y0+14); context.fillText('结果未达标',x0+4,y0+h-8); context.fillText('完成率低',x0,y0+h+22); context.fillText('完成率高',x0+w-45,y0+h+22);
+    const person = currentPerson(); if (!person) return;
+    const points = person.months.map((month,i) => hasRecord(month) ? {i,x:x0+w*rate(i,person)/100,y:y0+h*(achieved(i,month) ? .24 : .76)} : null).filter(Boolean);
+    if (points.length > 1) { context.beginPath(); context.strokeStyle = accent; context.globalAlpha=.55; context.lineWidth=1.5; points.forEach((p,i) => i ? context.lineTo(p.x,p.y) : context.moveTo(p.x,p.y)); context.stroke(); context.globalAlpha=1; }
+    points.forEach(point => { context.beginPath(); context.fillStyle = point.i === state.activeMonth-1 ? accent : css.getPropertyValue('--blue'); context.arc(point.x,point.y,point.i === state.activeMonth-1 ? 6 : 4,0,Math.PI*2); context.fill(); context.fillStyle = dim; context.fillText(`M${point.i+1}`,point.x+7,point.y-7); });
+  }
+  function addPerson() {
+    const name = document.getElementById('bd-new-name').value; const id = document.getElementById('bd-new-id').value; const hire = document.getElementById('bd-new-hire').value;
+    if (!name.trim()) { document.getElementById('bd-new-name').focus(); return; }
+    const person = freshPerson(name,id,hire); state.people.push(person); state.selectedId=person.id; state.activeMonth=monthFromHire(hire); save(); render();
+    document.getElementById('bd-new-name').value=''; document.getElementById('bd-new-id').value=''; document.getElementById('bd-new-hire').value='';
+  }
+  function exportCurrent() {
+    const person = currentPerson(); if (!person) return;
+    const blob = new Blob([JSON.stringify(person,null,2)],{type:'application/json;charset=utf-8'}); const link=document.createElement('a'); link.href=URL.createObjectURL(blob); link.download=`BD-${person.name}-${person.employeeId || 'data'}.json`; document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(link.href), 0);
+  }
+  function render() { renderPeople(); renderThresholds(); renderWorkspace(); }
+  document.getElementById('bd-add').addEventListener('click',addPerson);
+  select.addEventListener('change',event => { state.selectedId=event.target.value||null; const person=currentPerson(); state.activeMonth=monthFromHire(person?.hireMonth); save(); renderWorkspace(); });
+  document.querySelectorAll('[data-threshold]').forEach(input => input.addEventListener('change',event => { state.settings[event.target.dataset.threshold]=number(event.target.value); save(); renderWorkspace(); }));
+  document.getElementById('bd-export').addEventListener('click',exportCurrent);
+  window.addEventListener('resize',drawChart);
+  load(); render();
+})();
+</script>
+<script>
+window.BEN_STAGE_CONFIG = [
+  {name:'意向池建立',goal:'意向客户池 ≥ 20个',conditions:['保持稳定开发量','初步判断客户是否值得继续跟','基础开场和沟通能力过关','基础产品/合作知识能够正常回答','有价值客户录入 CRM 并持续跟进']},
+  {name:'转化阶段',goal:'转化出 3-4 个可继续推进的 IB/CPA',conditions:['持续跟进，不只做首次触达','识别真实合作需求','处理基础异议','推动注册/开户/合作下一步','判断客户优先级']},
+  {name:'结果兑现',goal:'Gross ≥ 5,000 USD；或 Master IB ≥ 6 可考虑延长试用',conditions:['把 IB/CPA 转成业务结果','推动客户实际入金','判断客户质量','常见问题基本独立处理','不依赖主管逐条给方案']},
+  {name:'增长阶段',goal:'Gross 10,000-30,000 USD',reference:true,conditions:['持续获取新客户/新 IB','不完全依赖前3个月存量客户','独立处理常见问题','形成稳定个人开发节奏','开始具备重复成功迹象']},
+  {name:'独立阶段',goal:'新增 IB/CPA 接近 8个/月，Gross 稳定增长',reference:true,conditions:['稳定开发','能自己调整方法','提高客户质量','同时维护多个 Pipeline','主管介入频率明显下降']},
+  {name:'阶段性定档',goal:'新增 IB/CPA 达到或接近 8个/月，Gross 进入稳定产出区间',reference:true,conditions:['结果具有持续性','能重复有效打法','不依赖单一客户','面对开发困难能自行调整','具备稳定 BD 基础']}
+];
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="lark-dashboard-data.js?rev=20260924-hire-stage-v1"></script>
+<script>
+(() => {
+  const liveData=window.LARK_DASHBOARD_DATA;
+  const dataReady=Boolean(liveData && Array.isArray(liveData.people) && Array.isArray(liveData.issues) && Array.isArray(liveData.customers));
+  const people=dataReady ? liveData.people : [];
+  const issues=dataReady ? liveData.issues : [];
+  const customers=dataReady ? liveData.customers : [];
+  const views=document.getElementById('manager-views'); let selected='Kelly'; let metric='ib'; let resultSort={key:'completion',dir:1}; let poolSort={key:'date',dir:-1};
+  const rate=p=>p.grossCompletion === null ? null : Math.round(Number(p.grossCompletion)*100); const rateLabel=p=>rate(p)===null?'—':`${rate(p)}%`; const cls=r=>r===null?'':r<50?'low':r<80?'mid':''; const person=n=>people.find(p=>p.name===n)||people[0];
+  const stageConfig=window.BEN_STAGE_CONFIG||[];
+  const stageFor=name=>{const p=person(name),count=(liveData.trends?.[name]||[]).filter(item=>item?.label).length,month=Number(p?.stageMonth);const index=Number.isInteger(month)&&month>0?Math.min(5,month-1):Math.min(5,Math.max(0,count-1)),source=Number.isInteger(month)&&month>0?`按 Lark 入职时间 ${p.hire} 计算`:`按当前可用的 ${count} 个月 Lark 历史记录估算`;return {index,stage:stageConfig[index]||{name:'阶段待确认',goal:'待配置',conditions:[]},count,source};};
+  const stageStatus=(p,stageIndex)=>{if(stageIndex===0)return Number(p.lead)>=20?'阶段目标已达成':'阶段目标待兑现';if(stageIndex===1)return Number(p.actualIB)>=3?'阶段目标已达成':'阶段目标待兑现';if(stageIndex===2)return Number(p.actualGross)>=5000?'正常转正条件达成':Number(p.master)>=6?'具备延长试用信号':'需结合诊断处理';if(stageIndex===3)return Number(p.actualGross)>=10000&&Number(p.actualGross)<=30000?'阶段目标范围内':Number(p.actualGross)>30000?'高于当前参考范围':'低于当前参考范围';if(stageIndex>=4)return Number(p.actualIB)>=8?'阶段目标范围内':'阶段目标待兑现';return '待确认';};
+  const CONDITION_STORAGE='ben-team-framework:growth-condition-checks:v1';
+  let conditionChecks={};
+  try{conditionChecks=JSON.parse(localStorage.getItem(CONDITION_STORAGE)||'{}')||{}}catch(error){conditionChecks={}}
+  const conditionKey=(name,index)=>`${name}:m${index+1}`;
+  const conditionValues=(name,index,count)=>{const saved=conditionChecks[conditionKey(name,index)];return Array.from({length:count},(_,i)=>Boolean(saved?.[i]));};
+  function conditionChecklist(name,index,conditions){const values=conditionValues(name,index,conditions.length),done=values.filter(Boolean).length;return `<div class="stage-detail"><div class="k">本阶段主要观察条件 <span class="reference-tag">已勾选 ${done}/${conditions.length}</span></div><div class="growth-condition-list">${conditions.map((condition,i)=>`<label class="growth-condition"><input type="checkbox" data-growth-condition="${i}" ${values[i]?'checked':''}><span>${safe(condition)}</span></label>`).join('')}</div><p class="quiet" style="margin:10px 0 0">勾选仅保存为本浏览器的管理评价，不写回 Lark。</p></div>`}
+  function bindConditionChecklist(name,index,conditions){document.querySelectorAll('[data-growth-condition]').forEach(input=>input.onchange=event=>{const values=conditionValues(name,index,conditions.length);values[Number(event.target.dataset.growthCondition)]=event.target.checked;conditionChecks[conditionKey(name,index)]=values;try{localStorage.setItem(CONDITION_STORAGE,JSON.stringify(conditionChecks))}catch(error){}render('growth')})}
+  const safe=value=>String(value??'').replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+  const customerDate=value=>/^\d{4}-\d{2}-\d{2}$/.test(value||'')?new Date(`${value}T00:00:00`):null;
+  const customerLatestDate=()=>customers.map(row=>customerDate(row.date)).filter(Boolean).sort((a,b)=>b-a)[0]||new Date();
+  const isConverted=row=>String(row.converted||'').trim().toUpperCase()==='YES';
+  function customerFlags(row){const note=String(row.note||''),latest=customerLatestDate(),date=customerDate(row.date),days=date?Math.floor((latest-date)/86400000):null,openSignal=/(承诺|答应|确认|准备|计划|愿意).{0,18}(开户|注册)|(开户|注册).{0,18}(承诺|答应|确认|准备|计划|愿意)/.test(note),registered=/(已注册|注册成功|开户完成|已开(?:了)?户)/.test(note),deposited=/(已入金|已首存|完成入金|已FTD)/.test(note),highPotential=/^(IB|CPA)$/.test(String(row.type||''))&&(row.intent==='A类'||/(高意向|重点|潜力|优质|社群.{0,5}(大|万))/.test(note)),nearFollow=/(今天|明天|本周|下周|回访|优先跟进|重点追踪)/.test(note),flags=[];if(row.intent==='A类')flags.push(['A类客户','red']);if(!isConverted(row)&&['A类','B类'].includes(row.intent)&&days!==null&&days>=14)flags.push([`超过${days}天无最新记录`,'red']);if(!isConverted(row)&&openSignal)flags.push(['承诺开户/注册未完成','']);if(!isConverted(row)&&registered&&!deposited)flags.push(['已注册未入金','']);if(!isConverted(row)&&highPotential)flags.push(['高潜力 IB/CPA','']);if(!isConverted(row)&&nearFollow)flags.push(['临近回访','']);return {flags,days};}
+  const nav=page=>{if(page==='framework'){document.body.classList.remove('app-mode');document.body.classList.add('method-mode');window.scrollTo({top:0,behavior:'smooth'});return;}document.body.classList.remove('method-mode');document.body.classList.add('app-mode');document.querySelectorAll('.manager-nav button').forEach(b=>b.classList.toggle('active',b.dataset.page===page));render(page);window.scrollTo({top:0,behavior:'smooth'});};
+  const controls=()=>`<div class="filters"><select id="person-select">${people.map(p=>`<option ${p.name===selected?'selected':''}>${p.name}</option>`).join('')}</select></div>`;
+  function brief(){const briefDate=issues[0]?.date || '暂无数据',updated=liveData.generatedAt?new Date(liveData.generatedAt).toLocaleString('zh-CN',{hour12:false}):'未知',today=issues.filter(x=>x.date===briefDate),alerts=[];people.forEach(p=>{const recent=issues.filter(x=>x.name===p.name).slice(0,3);if(recent.length===3&&recent.every(x=>!x.idea))alerts.push([p.name,'连续3条问题未给出解决思路','amber']);if(recent.length===3&&recent.reduce((n,x)=>n+x.lead,0)===0)alerts.push([p.name,'最近3条日程无新增意向','']);if(rate(p)!==null&&rate(p)<30)alerts.push([p.name,`当月完成度 ${rate(p)}%`,'']);});const totalGross=people.reduce((n,p)=>n+p.actualGross,0),totalIB=people.reduce((n,p)=>n+p.actualIB,0),warningPeople=new Set(alerts.map(x=>x[0])).size,teamRate=liveData.teamCompletion===null?'—':`${Math.round(liveData.teamCompletion*100)}%`;return `<div class="manager-view active"><h1 class="manager-title">今日简报</h1><p class="manager-sub">数据更新于 ${updated} · 最近有记录日期：${briefDate} · Lark 只读快照。</p><div class="kpi-row"><div class="kpi-card"><b>$${totalGross.toLocaleString()}</b><span>当月团队总 Gross</span></div><div class="kpi-card"><b>${teamRate}</b><span>团队目标完成度（Lark）</span></div><div class="kpi-card"><b>${totalIB}</b><span>当月新增 IB-CPA</span></div><div class="kpi-card"><b>${warningPeople}</b><span>当前预警人数</span></div></div><div class="brief-grid"><div class="manager-card" style="grid-column:1/-1"><h3>预警区</h3>${alerts.length?alerts.map(a=>`<div class="warning ${a[2]}"><b>${a[0]}</b> · ${a[1]}　<button class="link-button" data-growth="${a[0]}">查看成长曲线</button></div>`).join(''):'<span class="quiet">当前无触发预警</span>'}</div><div class="manager-card" style="grid-column:span 2"><h3>今日问题简报</h3>${people.map(p=>{const x=today.find(i=>i.name===p.name);return `<div class="issue"><b>${p.name}</b><br>${x?`问题：${x.problem}<br>思路：${x.idea||'<span class="quiet">未给出解决思路</span>'}`:'<span class="quiet">当日无记录</span>'}</div>`}).join('')}</div><div class="manager-card"><h3>当月完成度</h3>${[...people].sort((a,b)=>(rate(a)??Infinity)-(rate(b)??Infinity)).map(p=>`<div class="issue"><button class="link-button" data-growth="${p.name}">${p.name}</button> ${rateLabel(p)}<div class="progress"><i class="${cls(rate(p))}" style="width:${Math.min(rate(p)??0,100)}%"></i></div></div>`).join('')}</div></div></div>`}
+  function results(){const value=(p,k)=>k==='completion'?rate(p):p[k];const sorted=[...people].sort((a,b)=>{const x=value(a,resultSort.key),y=value(b,resultSort.key);return (typeof x==='string'?x.localeCompare(y):(x??Infinity)-(y??Infinity))*resultSort.dir});const head=(label,key)=>`<th data-sort="${key}">${label}${resultSort.key===key?(resultSort.dir>0?' ↑':' ↓'):''}</th>`;return `<div class="manager-view active"><h1 class="manager-title">团队结果看板</h1><p class="manager-sub">实际数据、月度目标与 Lark 已算完成度分别展示；点击列标题可排序。</p><div class="two-col" style="margin-bottom:16px"><div class="manager-card"><h3>团队 Gross 排行</h3><div class="chart-box"><canvas id="gross-ranking-chart"></canvas></div></div><div class="manager-card"><h3>团队 Gross 月度趋势</h3><div class="chart-box"><canvas id="team-trend-chart"></canvas></div></div></div><div class="manager-card"><table class="manager-table"><thead><tr>${head('销售','name')}${head('Master IB','master')}${head('Sub IB','sub')}${head('CPA','cpa')}${head('Registration','reg')}${head('FTD','ftd')}${head('实际 Gross','actualGross')}<th>Monthly Net</th>${head('实际 IB/CPA','actualIB')}${head('Gross目标','targetGross')}${head('IB/CPA目标','targetIB')}${head('完成度','completion')}</tr></thead><tbody>${sorted.map(p=>`<tr><td>${p.name}</td><td>${p.master}</td><td>${p.sub}</td><td>${p.cpa}</td><td>${p.reg}</td><td>${p.ftd}</td><td>$${p.actualGross.toLocaleString()}</td><td>—</td><td>${p.actualIB}</td><td>$${p.targetGross.toLocaleString()}</td><td>${p.targetIB}</td><td>${rateLabel(p)}<div class="progress"><i class="${cls(rate(p))}" style="width:${Math.min(rate(p)??0,100)}%"></i></div></td></tr>`).join('')}</tbody></table></div></div>`}
+  function growth(){const p=person(selected);const series=liveData.trends?.[selected]||[];const current=stageFor(selected);const stage=current.stage;return `<div class="manager-view active"><h1 class="manager-title">成长曲线</h1><p class="manager-sub">基于 Lark 历史日程与团队汇总数据；参考判断，不作为最终结论。</p><div class="two-col"><div class="manager-card">${controls()}<div class="filters"><button class="bd-action" data-metric="lead">意向数</button><button class="bd-action" data-metric="ib">IB-CPA数</button><button class="bd-action" data-metric="gross">Gross</button></div><div class="chart-box"><canvas id="growth-chart"></canvas></div></div><div class="manager-card"><h3>${p.name} · 转化漏斗</h3><div class="chart-box"><canvas id="funnel-chart"></canvas></div><p class="quiet">意向池 → 实际 IB/CPA → 实际 Gross，使用当前 Lark 快照的实际数值。</p></div></div><div class="manager-card" style="margin-top:16px"><h3>当前：第${current.index+1}月 · ${stage.name}</h3><p><b>本阶段目标：</b>${stage.goal}${stage.reference?' <span class="reference-tag">V1参考基准，可校准</span>':''}</p><p><b>当前状态：</b>${stageStatus(p,current.index)}　<span class="quiet">按当前可用的 ${series.length} 个月 Lark 历史记录估算阶段。</span></p><p><b>本阶段主要观察条件：</b>${(stage.conditions||[]).join('；')}</p><p class="quiet">当前指标：意向 ${p.lead} · 实际 IB/CPA ${p.actualIB} · 实际 Gross $${p.actualGross.toLocaleString()} · Lark完成度 ${rateLabel(p)}</p></div></div>`}
+  function pool(){const head=(label,key)=>`<th data-pool-sort="${key}">${label}${poolSort.key===key?(poolSort.dir>0?' ↑':' ↓'):''}</th>`,converted=customers.filter(isConverted).length,latest=customerLatestDate(),latestLabel=latest.toLocaleDateString('zh-CN'),tiers=['A类','B类','C类'].map(tier=>{const rows=customers.filter(row=>row.intent===tier),done=rows.filter(isConverted).length,rate=rows.length?Math.round(done/rows.length*100):0;return {tier,count:rows.length,done,rate};}),attentionAll=customers.map(row=>({row,...customerFlags(row)})).filter(item=>item.flags.length).sort((a,b)=>b.flags.length-a.flags.length||(b.days??-1)-(a.days??-1)),attention=attentionAll.slice(0,20);return `<div class="manager-view active"><h1 class="manager-title">客户池</h1><p class="manager-sub">统计来自 Lark 客户记录快照；重点关注基于意向度、最后记录日期和已有备注自动提示，供管理者复核。</p><h3>客户池总览</h3><div class="kpi-row"><div class="kpi-card"><b>${customers.length}</b><span>客户记录总数</span></div><div class="kpi-card"><b>${tiers[0].count}</b><span>A类客户</span></div><div class="kpi-card"><b>${customers.length?Math.round(converted/customers.length*100):0}%</b><span>整体已转化率（${converted}/${customers.length}）</span></div><div class="kpi-card"><b>${attentionAll.length}</b><span>重点关注记录</span></div></div><div class="manager-card"><h3>ABC客户结构及各级转化率</h3><p class="quiet">转化率 = 客户记录中“转化”字段为 YES 的数量 ÷ 对应等级记录总数；数据截至 ${latestLabel}。</p><div class="pool-tier-grid">${tiers.map(tier=>`<div class="pool-tier"><b>${tier.tier} · ${tier.count}</b><span>已转化 ${tier.done} · 转化率 ${tier.rate}%</span><div class="progress"><i class="${cls(tier.rate)}" style="width:${Math.min(tier.rate,100)}%"></i></div></div>`).join('')}</div></div><div class="manager-card" style="margin-top:16px"><h3>重点关注客户名单</h3><p class="quiet">自动提示：A类、A/B类超过14天无最新记录、备注中出现承诺开户/注册未完成、已注册未入金、高潜力 IB/CPA、临近回访。提示不替代人工判断。当前展示优先级最高的20条。</p>${attention.length?`<table class="manager-table"><thead><tr><th>最后记录</th><th>负责人</th><th>客户</th><th>类型</th><th>意向</th><th>关注原因</th><th>最新记录</th></tr></thead><tbody>${attention.map(({row,flags})=>`<tr><td>${safe(row.date||'—')}</td><td>${safe(row.name||'—')}</td><td>${safe(row.contact||'未留联系方式')}</td><td>${safe(row.type||'—')}</td><td>${safe(row.intent||'—')}</td><td><div class="attention-tags">${flags.map(flag=>`<span class="attention-tag ${flag[1]}">${safe(flag[0])}</span>`).join('')}</div></td><td class="attention-note">${safe(row.note||'未填写记录')}</td></tr>`).join('')}</tbody></table>`:'<p class="quiet">当前快照中没有命中重点关注条件的记录。</p>'}</div><div class="manager-card" style="margin-top:16px"><h3>完整客户明细</h3><div class="filters"><select id="pool-person"><option value="">全部人员</option>${people.map(p=>`<option>${safe(p.name)}</option>`).join('')}</select><select id="pool-channel"><option value="">全部渠道</option>${[...new Set(customers.map(x=>x.channel).filter(Boolean))].map(x=>`<option>${safe(x)}</option>`).join('')}</select><select id="pool-intent"><option value="">全部意向度</option>${[...new Set(customers.map(x=>x.intent).filter(Boolean))].map(x=>`<option>${safe(x)}</option>`).join('')}</select><select id="pool-convert"><option value="">全部转化状态</option>${[...new Set(customers.map(x=>x.converted).filter(Boolean))].map(x=>`<option>${safe(x)}</option>`).join('')}</select></div><table class="manager-table"><thead><tr>${head('时间','date')}${head('姓名','name')}${head('国家','country')}<th>联系方式</th>${head('来源','source')}${head('客户类型','type')}${head('联系渠道','channel')}${head('意向度','intent')}${head('转化','converted')}<th>记录</th></tr></thead><tbody id="pool-rows"></tbody></table></div></div>`}
+  function pool(){const head=(label,key)=>`<th data-pool-sort="${key}">${label}${poolSort.key===key?(poolSort.dir>0?' ↑':' ↓'):''}</th>`,converted=customers.filter(isConverted).length,latest=customerLatestDate(),latestLabel=latest.toLocaleDateString('zh-CN'),tiers=['A类','B类','C类'].map(tier=>{const rows=customers.filter(row=>row.intent===tier),done=rows.filter(isConverted).length,rate=rows.length?Math.round(done/rows.length*100):0;return {tier,count:rows.length,done,rate};}),attentionAll=customers.map(row=>({row,...customerFlags(row)})).filter(item=>item.flags.length).sort((a,b)=>b.flags.length-a.flags.length||(b.days??-1)-(a.days??-1)),attention=attentionAll.slice(0,20),salesStructure=people.map(person=>({name:person.name,a:customers.filter(row=>row.name===person.name&&row.intent==='A类').length,b:customers.filter(row=>row.name===person.name&&row.intent==='B类').length,c:customers.filter(row=>row.name===person.name&&row.intent==='C类').length,converted:customers.filter(row=>row.name===person.name&&isConverted(row)).length}));setTimeout(()=>poolCharts(salesStructure),0);return `<div class="manager-view active"><h1 class="manager-title">客户池</h1><p class="manager-sub">统计来自 Lark 客户记录快照；重点关注基于意向度、最后记录日期和已有备注自动提示，供管理者复核。</p><h3>客户池总览</h3><div class="kpi-row"><div class="kpi-card"><b>${customers.length}</b><span>客户记录总数</span></div><div class="kpi-card"><b>${tiers[0].count}</b><span>A类客户</span></div><div class="kpi-card"><b>${customers.length?Math.round(converted/customers.length*100):0}%</b><span>整体已转化率（${converted}/${customers.length}）</span></div><div class="kpi-card"><b>${attentionAll.length}</b><span>重点关注记录</span></div></div><div class="manager-card"><h3>ABC客户结构及各级转化率</h3><p class="quiet">转化率 = 客户记录中“转化”字段为 YES 的数量 ÷ 对应等级记录总数；数据截至 ${latestLabel}。</p><div class="pool-tier-grid">${tiers.map(tier=>`<div class="pool-tier"><b>${tier.tier} · ${tier.count}</b><span>已转化 ${tier.done} · 转化率 ${tier.rate}%</span><div class="progress"><i class="${cls(tier.rate)}" style="width:${Math.min(tier.rate,100)}%"></i></div></div>`).join('')}</div><h3 style="margin-top:22px">各销售客户结构与已转化</h3><div class="chart-box"><canvas id="sales-customer-structure-chart" aria-label="各销售ABC客户及已转化客户图表"></canvas></div><p class="quiet">按负责人汇总 A类、B类、C类客户记录及“转化”字段为 YES 的记录数。</p></div><div class="manager-card" style="margin-top:16px"><h3>重点关注客户名单</h3><p class="quiet">自动提示：A类、A/B类超过14天无最新记录、备注中出现承诺开户/注册未完成、已注册未入金、高潜力 IB/CPA、临近回访。提示不替代人工判断。当前展示优先级最高的20条。</p>${attention.length?`<table class="manager-table"><thead><tr><th>最后记录</th><th>负责人</th><th>客户</th><th>类型</th><th>意向</th><th>关注原因</th><th>最新记录</th></tr></thead><tbody>${attention.map(({row,flags})=>`<tr><td>${safe(row.date||'—')}</td><td>${safe(row.name||'—')}</td><td>${safe(row.contact||'未留联系方式')}</td><td>${safe(row.type||'—')}</td><td>${safe(row.intent||'—')}</td><td><div class="attention-tags">${flags.map(flag=>`<span class="attention-tag ${flag[1]}">${safe(flag[0])}</span>`).join('')}</div></td><td class="attention-note">${safe(row.note||'未填写记录')}</td></tr>`).join('')}</tbody></table>`:'<p class="quiet">当前快照中没有命中重点关注条件的记录。</p>'}</div></div>`}
+  function poolCharts(rows){const el=document.getElementById('sales-customer-structure-chart');if(!el)return;const body=rows.map(row=>{const total=row.a+row.b+row.c,rate=total?Math.round(row.converted/total*100):0;return `<tr><td><b>${safe(row.name)}</b></td><td>${row.a}</td><td>${row.b}</td><td>${row.c}</td><td>${row.converted}</td><td>${total}</td><td>${rate}%</td></tr>`}).join('');el.parentElement.outerHTML=`<div class="manager-table" style="overflow-x:auto"><table class="manager-table"><thead><tr><th>负责人</th><th>A类</th><th>B类</th><th>C类</th><th>已转化</th><th>ABC合计</th><th>转化率</th></tr></thead><tbody>${body}</tbody></table></div>`;}
+  function growth(){const p=person(selected),series=liveData.trends?.[selected]||[],current=stageFor(selected),stage=current.stage,conditions=stage.conditions||[];setTimeout(()=>bindConditionChecklist(selected,current.index,conditions),0);return `<div class="manager-view active"><h1 class="manager-title">成长曲线</h1><p class="manager-sub">基于 Lark 历史日程与团队汇总数据；参考判断，不作为最终结论。</p><div class="two-col"><div class="manager-card">${controls()}<div class="filters"><button class="bd-action" data-metric="lead">意向数</button><button class="bd-action" data-metric="ib">IB-CPA数</button><button class="bd-action" data-metric="gross">Gross</button></div><div class="chart-box"><canvas id="growth-chart"></canvas></div></div><div class="manager-card"><h3>${p.name} · 转化漏斗</h3><div class="chart-box"><canvas id="funnel-chart"></canvas></div><p class="quiet">意向池 → 实际 IB/CPA → 实际 Gross，使用当前 Lark 快照的实际数值。</p></div></div><div class="manager-card" style="margin-top:16px"><h3>当前：第${current.index+1}月 · ${stage.name}</h3><p><b>本阶段目标：</b>${stage.goal}${stage.reference?' <span class="reference-tag">V1参考基准，可校准</span>':''}</p><p><b>当前状态：</b>${stageStatus(p,current.index)}　<span class="quiet">按当前可用的 ${series.length} 个月 Lark 历史记录估算阶段。</span></p>${conditionChecklist(selected,current.index,conditions)}<p class="quiet">当前指标：意向 ${p.lead} · 实际 IB/CPA ${p.actualIB} · 实际 Gross $${p.actualGross.toLocaleString()} · Lark完成度 ${rateLabel(p)}</p></div></div>`}
+  function growth(){const p=person(selected),series=liveData.trends?.[selected]||[],current=stageFor(selected),stage=current.stage,conditions=stage.conditions||[];setTimeout(()=>bindConditionChecklist(selected,current.index,conditions),0);return `<div class="manager-view active"><h1 class="manager-title">成长曲线</h1><p class="manager-sub">基于 Lark 历史日程与团队汇总数据；参考判断，不作为最终结论。</p><div class="two-col"><div class="manager-card">${controls()}<div class="filters"><button class="bd-action" data-metric="lead">意向数</button><button class="bd-action" data-metric="ib">IB-CPA数</button><button class="bd-action" data-metric="gross">Gross</button></div><div class="chart-box"><canvas id="growth-chart"></canvas></div></div><div class="manager-card"><h3>${p.name} · 阶段数据概览</h3><div class="kpi-row" style="grid-template-columns:repeat(3,1fr);margin:16px 0"><div class="kpi-card"><b>${p.lead}</b><span>近30条日程累计新增意向</span></div><div class="kpi-card"><b>${p.actualIB}</b><span>最新月度实际 IB/CPA</span></div><div class="kpi-card"><b>$${p.actualGross.toLocaleString()}</b><span>最新月度实际 Gross</span></div></div><p class="quiet">三项数据单位和统计范围不同，独立展示，不按同一刻度比较或计算漏斗转化率。</p></div></div><div class="manager-card" style="margin-top:16px"><h3>当前：第${current.index+1}月 · ${stage.name}</h3><p><b>本阶段目标：</b>${stage.goal}${stage.reference?' <span class="reference-tag">V1参考基准，可校准</span>':''}</p><p><b>当前状态：</b>${stageStatus(p,current.index)}　<span class="quiet">按当前可用的 ${series.length} 个月 Lark 历史记录估算阶段。</span></p>${conditionChecklist(selected,current.index,conditions)}<p class="quiet">当前指标：近30条日程累计意向 ${p.lead} · 最新月度实际 IB/CPA ${p.actualIB} · 最新月度实际 Gross $${p.actualGross.toLocaleString()} · Lark完成度 ${rateLabel(p)}</p></div></div>`}
+  function logs(){return `<div class="manager-view active"><h1 class="manager-title">问题日志</h1><div class="filters">${controls()}<label class="quiet"><input id="show-all" type="checkbox"> 显示全部成员</label></div><div class="manager-card"><h3>复盘活跃度</h3><div id="activity-heatmap" class="heatmap"></div><p class="quiet">近 30 个有记录日期，绿色代表当天有复盘记录。</p></div><div class="manager-card" id="log-list" style="margin-top:16px"></div></div>`}
+  function rows(){const get=id=>document.getElementById(id)?.value||'';const out=customers.filter(x=>(!get('pool-person')||x.name===get('pool-person'))&&(!get('pool-channel')||x.channel===get('pool-channel'))&&(!get('pool-intent')||x.intent===get('pool-intent'))&&(!get('pool-convert')||x.converted===get('pool-convert'))).sort((a,b)=>String(a[poolSort.key]||'').localeCompare(String(b[poolSort.key]||''))*poolSort.dir);document.getElementById('pool-rows').innerHTML=out.map(x=>`<tr><td>${safe(x.date)}</td><td>${safe(x.name)}</td><td>${safe(x.country)}</td><td>${safe(x.contact)}</td><td>${safe(x.source)}</td><td>${safe(x.type)}</td><td>${safe(x.channel)}</td><td>${safe(x.intent)}</td><td>${safe(x.converted)}</td><td class="attention-note">${safe(x.note)}</td></tr>`).join('');}
+  function growth(){const p=person(selected),series=liveData.trends?.[selected]||[],current=stageFor(selected),stage=current.stage,conditions=stage.conditions||[];setTimeout(()=>bindConditionChecklist(selected,current.index,conditions),0);return `<div class="manager-view active"><h1 class="manager-title">成长曲线</h1><p class="manager-sub">基于 Lark 历史日程与团队汇总数据；参考判断，不作为最终结论。</p><div class="two-col"><div class="manager-card">${controls()}<div class="filters"><button class="bd-action" data-metric="lead">意向数</button><button class="bd-action" data-metric="ib">IB-CPA数</button><button class="bd-action" data-metric="gross">Gross</button></div><div class="chart-box"><canvas id="growth-chart"></canvas></div></div><div class="manager-card"><h3>${p.name} · 阶段数据概览</h3><div class="kpi-row" style="grid-template-columns:repeat(3,1fr);margin:16px 0"><div class="kpi-card"><b>${p.lead}</b><span>近30条日程累计新增意向</span></div><div class="kpi-card"><b>${p.actualIB}</b><span>最新月度实际 IB/CPA</span></div><div class="kpi-card"><b>$${p.actualGross.toLocaleString()}</b><span>最新月度实际 Gross</span></div></div><p class="quiet">三项数据单位和统计范围不同，独立展示，不按同一刻度比较或计算漏斗转化率。</p></div></div><div class="manager-card" style="margin-top:16px"><h3>当前：第${current.index+1}月 · ${stage.name}</h3><p><b>本阶段目标：</b>${stage.goal}${stage.reference?' <span class="reference-tag">V1参考基准，可校准</span>':''}</p><p><b>当前状态：</b>${stageStatus(p,current.index)}　<span class="quiet">${current.source}。</span></p>${conditionChecklist(selected,current.index,conditions)}<p class="quiet">当前指标：近30条日程累计意向 ${p.lead} · 最新月度实际 IB/CPA ${p.actualIB} · 最新月度实际 Gross $${p.actualGross.toLocaleString()} · Lark完成度 ${rateLabel(p)}</p></div></div>`}
+  function rows(){const target=document.getElementById('pool-rows');if(!target)return;}
+  function logRows(all=false){document.getElementById('log-list').innerHTML=issues.filter(x=>(all||person(x.name).early)&&(!selected||x.name===selected)).map(x=>{const current=stageFor(x.name);return `<div class="timeline-item"><b>${x.date} · ${x.name}</b> <span class="reference-tag">第${current.index+1}月 · ${current.stage.name}</span><br>新增意向：${x.lead}　新增IB/CPA：${x.ib}<br>问题：${x.problem}<br>思路：${x.idea||'<span class="quiet">未给出解决思路</span>'}</div>`}).join('')||'<span class="quiet">暂无记录</span>';}
+  const chartColor=name=>getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  function makeChart(id,config){const el=document.getElementById(id);if(!el)return;if(!window.Chart){el.replaceWith(Object.assign(document.createElement('p'),{className:'quiet',textContent:'图表库未加载，请检查网络后刷新页面。'}));return;}new Chart(el,config);}
+  function chart(){const months=new Map();for(const item of liveData.trends?.[selected]||[]){const value=Number(item?.[metric]);if(item?.label&&Number.isFinite(value))months.set(item.label,value);}const series=[...months].sort((a,b)=>a[0].localeCompare(b[0])),p=person(selected);makeChart('growth-chart',{type:'line',data:{labels:series.map(x=>x[0]),datasets:[{label:metric==='gross'?'实际 Gross':metric==='lead'?'意向数':'实际 IB/CPA数',data:series.map(x=>x[1]),borderColor:chartColor('--accent'),backgroundColor:chartColor('--accent'),tension:.25,spanGaps:false}]},options:{animation:false,normalized:true,responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:chartColor('--text-dim')}},title:{display:!series.length,text:'暂无可绘制的 Lark 历史数据',color:chartColor('--text-faint')}},scales:{x:{ticks:{color:chartColor('--text-faint')}},y:{ticks:{color:chartColor('--text-faint')},beginAtZero:true}}}});makeChart('funnel-chart',{type:'bar',data:{labels:['意向池','实际 IB/CPA','实际 Gross'],datasets:[{data:[Number(p.lead)||0,Number(p.actualIB)||0,Number(p.actualGross)||0],backgroundColor:[chartColor('--accent'),chartColor('--green'),chartColor('--blue')]}]},options:{animation:false,normalized:true,indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{color:chartColor('--text-faint')}},y:{ticks:{color:chartColor('--text-dim')}}}}});}
+  function dashboardCharts(){const ranked=[...people].sort((a,b)=>b.actualGross-a.actualGross),trend=(liveData.teamGrossTrend||[]).filter(item=>item.label&&Number.isFinite(Number(item.gross))&&Number.isFinite(Number(item.actualIB)));makeChart('gross-ranking-chart',{type:'bar',data:{labels:ranked.map(x=>x.name),datasets:[{data:ranked.map(x=>x.actualGross),backgroundColor:chartColor('--accent')}]},options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{color:chartColor('--text-faint')}},y:{ticks:{color:chartColor('--text-dim')}}}}});makeChart('team-trend-chart',{type:'line',data:{labels:trend.map(x=>x.label),datasets:[{label:'团队 Gross',data:trend.map(x=>x.gross),borderColor:chartColor('--green'),backgroundColor:chartColor('--green'),tension:.25,yAxisID:'gross'},{label:'团队新增 IB/CPA',data:trend.map(x=>x.actualIB),borderColor:chartColor('--blue'),backgroundColor:chartColor('--blue'),tension:.25,yAxisID:'ib'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:chartColor('--text-dim')}}},scales:{x:{ticks:{color:chartColor('--text-faint')}},gross:{type:'linear',position:'left',ticks:{color:chartColor('--green')},beginAtZero:true},ib:{type:'linear',position:'right',ticks:{color:chartColor('--blue')},beginAtZero:true,grid:{drawOnChartArea:false}}}}});}
+  function heatmap(){const target=document.getElementById('activity-heatmap');if(!target)return;const days=[...new Set(issues.map(x=>x.date))].sort().slice(-30);target.innerHTML=days.map(day=>`<i class="${issues.some(x=>x.name===selected&&x.date===day)?'active':''}" title="${day}"></i>`).join('');}
+  function render(page){if(!dataReady){views.innerHTML='<div class="manager-view active"><h1 class="manager-title">数据加载失败</h1><p class="manager-sub">未找到或无法解析 Lark 数据快照。请运行只读同步后再刷新页面；页面不会显示示例数据。</p></div>';return;}views.innerHTML=page==='brief'?brief():page==='results'?results():page==='growth'?growth():page==='pool'?pool():logs();document.querySelectorAll('[data-growth]').forEach(b=>b.onclick=()=>{selected=b.dataset.growth;nav('growth')});document.querySelectorAll('#person-select').forEach(s=>s.onchange=e=>{selected=e.target.value;render(page)});document.querySelectorAll('[data-metric]').forEach(b=>b.onclick=()=>{metric=b.dataset.metric;render('growth')});if(page==='results'){dashboardCharts();document.querySelectorAll('[data-sort]').forEach(h=>h.onclick=()=>{const k=h.dataset.sort;resultSort={key:k,dir:resultSort.key===k?-resultSort.dir:1};render('results')})}if(page==='pool'){rows();document.querySelectorAll('#pool-person,#pool-channel,#pool-intent,#pool-convert').forEach(x=>x.onchange=rows);document.querySelectorAll('[data-pool-sort]').forEach(h=>h.onclick=()=>{const k=h.dataset.poolSort;poolSort={key:k,dir:poolSort.key===k?-poolSort.dir:1};render('pool')})}if(page==='issues'){heatmap();logRows();document.getElementById('show-all').onchange=e=>logRows(e.target.checked)}if(page==='growth')chart()}
+  document.querySelectorAll('.manager-nav button').forEach(b=>b.onclick=()=>nav(b.dataset.page));
+  nav('brief');
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+# Local Lark snapshots and build helpers are not part of the deployed site.
+work/
+
+# Local-only data refresh utility; GitHub Pages does not use it.
+outputs/刷新Lark数据.command
