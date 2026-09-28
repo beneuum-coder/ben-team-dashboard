@@ -29,4 +29,4 @@
 - `LARK_APP_SECRET`
 - `LARK_APP_TOKEN`
 
-这些值只在 Actions 运行时使用，不写入仓库或网页文件。
+这些值只在 Actions 运行时使用，不写入仓库或网页文件。本机手动运行时，脚本会优先复用 `/Users/x/.codex/lark-bitable-tools.json` 中已登录的 Lark CLI Profile；CRM 凭证仍从 `/Users/AI项目/salesreport-ultima/.env` 加载。

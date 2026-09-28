@@ -19,6 +19,7 @@ import pyotp
 import requests
 
 TABLE = "tbl9L956hdRmwd2g"
+LOCAL_LARK_CONFIG = "/Users/x/.codex/lark-bitable-tools.json"
 MSK = timezone(timedelta(hours=3))
 SALES = ("Rita.EU", "Ben.Eu", "Kelly.Lin", "Elroy.Chuan")
 DISPLAY = {"Rita.EU": "Rita", "Ben.Eu": "Ben", "Kelly.Lin": "Kelly", "Elroy.Chuan": "Elroy"}
@@ -91,43 +92,65 @@ def ib_by_day(headers, month):
     return out
 
 
-def lark_token():
-    response = requests.post("https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal", json={"app_id": os.environ["LARK_APP_ID"], "app_secret": os.environ["LARK_APP_SECRET"]}, timeout=30)
-    response.raise_for_status()
-    payload = response.json()
-    if payload.get("code") != 0:
-        raise RuntimeError("Unable to obtain Lark access token")
-    return payload["tenant_access_token"]
+class LarkTransport:
+    """Use the existing local CLI profile, or GitHub Actions environment Secrets."""
+
+    def __init__(self):
+        config_path = os.getenv("LARK_CONFIG", LOCAL_LARK_CONFIG)
+        config = {}
+        if os.path.isfile(config_path):
+            config = (json.loads(Path(config_path).read_text(encoding="utf-8")).get("lark") or {})
+        cli = config.get("lark_cli") or config.get("cli")
+        self.app = os.getenv("LARK_APP_TOKEN") or config.get("app_token")
+        self.cli_bin = cli.get("bin") if cli else None
+        self.cli_profile = cli.get("profile") if cli else None
+        self.tenant_token = None
+        if not self.app:
+            raise RuntimeError("Missing LARK_APP_TOKEN or Lark CLI config")
+
+    def request(self, method, path, body=None):
+        if self.cli_bin:
+            command = [self.cli_bin]
+            if self.cli_profile:
+                command += ["--profile", self.cli_profile]
+            command += ["api", method, f"/open-apis{path}", "--as", "bot", "--format", "json"]
+            if body is not None:
+                command += ["--data", json.dumps(body, ensure_ascii=False, separators=(",", ":"))]
+            result = __import__("subprocess").run(command, check=True, capture_output=True, text=True)
+            payload = json.loads(result.stdout)
+        else:
+            if not self.tenant_token:
+                response = requests.post("https://open.larksuite.com/open-apis/auth/v3/tenant_access_token/internal", json={"app_id": os.environ["LARK_APP_ID"], "app_secret": os.environ["LARK_APP_SECRET"]}, timeout=30)
+                response.raise_for_status()
+                token_payload = response.json()
+                if token_payload.get("code") != 0:
+                    raise RuntimeError("Unable to obtain Lark access token")
+                self.tenant_token = token_payload["tenant_access_token"]
+            response = requests.request(method, f"https://open.larksuite.com/open-apis{path}", headers={"Authorization": f"Bearer {self.tenant_token}", "Content-Type": "application/json"}, json=body, timeout=30)
+            response.raise_for_status()
+            payload = response.json()
+        if payload.get("code") not in (0, None):
+            raise RuntimeError(f"Lark API error: {payload.get('msg', payload.get('code'))}")
+        return payload
 
 
-def lark_request(token, method, path, body=None):
-    response = requests.request(method, f"https://open.larksuite.com/open-apis{path}", headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=body, timeout=30)
-    response.raise_for_status()
-    payload = response.json()
-    if payload.get("code") not in (0, None):
-        raise RuntimeError(f"Lark API error: {payload.get('msg', payload.get('code'))}")
-    return payload
-
-
-def lark_records(token):
-    app = os.environ["LARK_APP_TOKEN"]
+def lark_records(lark):
     items, page_token = [], None
     while True:
         body = {"page_size": 500}
         if page_token:
             body["page_token"] = page_token
-        data = lark_request(token, "POST", f"/bitable/v1/apps/{app}/tables/{TABLE}/records/search", body).get("data", {})
+        data = lark.request("POST", f"/bitable/v1/apps/{lark.app}/tables/{TABLE}/records/search", body).get("data", {})
         items.extend(data.get("items", []))
         if not data.get("has_more"):
             return items
         page_token = data.get("page_token")
 
 
-def write_plan(token, creates, updates):
-    app = os.environ["LARK_APP_TOKEN"]
+def write_plan(lark, creates, updates):
     for records, action in ((creates, "batch_create"), (updates, "batch_update")):
         for index in range(0, len(records), 100):
-            lark_request(token, "POST", f"/bitable/v1/apps/{app}/tables/{TABLE}/records/{action}", {"records": records[index:index + 100]})
+            lark.request("POST", f"/bitable/v1/apps/{lark.app}/tables/{TABLE}/records/{action}", {"records": records[index:index + 100]})
 
 
 def date_key(value):
@@ -160,8 +183,8 @@ def main():
     headers = crm_login()
     members = team_members(headers)
     rates, ib = exchange_rates(headers), ib_by_day(headers, args.month)
-    token = lark_token()
-    existing = {(fields.get("销售"), date_key(fields.get("日期"))): record for record in lark_records(token) if (fields := record.get("fields", {}))}
+    lark = LarkTransport()
+    existing = {(fields.get("销售"), date_key(fields.get("日期"))): record for record in lark_records(lark) if (fields := record.get("fields", {}))}
     cumulative = {name: {"master": 0, "sub": 0} for name in SALES}
     creates, updates = [], []
     day = date(today.year, today.month, 1)
@@ -186,9 +209,9 @@ def main():
     print(json.dumps({"create": len(creates), "update": len(updates), "delete": 0}, ensure_ascii=False))
     if not args.apply:
         return
-    write_plan(token, creates, updates)
+    write_plan(lark, creates, updates)
     if args.dashboard_export:
-        export_latest(lark_records(token), today, args.dashboard_export)
+        export_latest(lark_records(lark), today, args.dashboard_export)
 
 
 if __name__ == "__main__":
