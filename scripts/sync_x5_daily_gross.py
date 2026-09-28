@@ -147,6 +147,10 @@ def lark_records(lark):
         page_token = data.get("page_token")
 
 
+def lark_fields(lark):
+    return lark.request("GET", f"/bitable/v1/apps/{lark.app}/tables/{TABLE}/fields").get("data", {}).get("items", [])
+
+
 def write_plan(lark, creates, updates):
     for records, action in ((creates, "batch_create"), (updates, "batch_update")):
         for index in range(0, len(records), 100):
@@ -154,21 +158,71 @@ def write_plan(lark, creates, updates):
 
 
 def date_key(value):
-    return datetime.fromtimestamp(int(value) / 1000, MSK).date().isoformat() if value else ""
+    if not value:
+        return ""
+    if isinstance(value, str) and len(value) >= 10 and value[4:5] == "-":
+        return value[:10]
+    return datetime.fromtimestamp(int(value) / 1000, MSK).date().isoformat()
+
+
+def text_value(value):
+    """Normalize Lark text fields, which are returned as rich-text fragments."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return "".join(str(item.get("text", "")) for item in value if isinstance(item, dict))
+    if isinstance(value, dict):
+        return str(value.get("text", ""))
+    return "" if value is None else str(value)
+
+
+def select_day_records(records, today):
+    selected, duplicates = {}, {}
+    for record in records:
+        fields = record.get("fields", {})
+        name = text_value(fields.get("销售"))
+        if name not in (*DISPLAY.values(), "Total") or date_key(fields.get("日期")) != today.isoformat():
+            continue
+        if name in selected:
+            duplicates.setdefault(name, []).append(record["record_id"])
+        selected[name] = fields
+    return selected, duplicates
 
 
 def export_latest(records, today, destination):
-    selected = {}
-    for record in records:
-        fields = record.get("fields", {})
-        name = fields.get("销售")
-        if name in (*DISPLAY.values(), "Total") and date_key(fields.get("日期")) == today.isoformat():
-            selected[name] = fields
+    selected, duplicates = select_day_records(records, today)
     expected = {*DISPLAY.values(), "Total"}
+    if duplicates:
+        raise RuntimeError(f"X5 daily Lark read-back has duplicate sales records: {duplicates}")
     if set(selected) != expected:
         raise RuntimeError(f"X5 daily Lark read-back incomplete: expected {sorted(expected)}, got {sorted(selected)}")
     updated = max(int(row.get("更新时间") or 0) for row in selected.values())
     Path(destination).write_text(json.dumps({"date": today.isoformat(), "updatedAt": updated, "records": selected}, ensure_ascii=False), encoding="utf-8")
+
+
+def export_after_readback(lark, today, destination):
+    fields = {field.get("field_name"): field.get("type") for field in lark_fields(lark)}
+    print(
+        f"phase=Lark read-back query date={today.isoformat()} "
+        f"date_field_type={fields.get('日期')} query=client-side-full-table",
+        flush=True,
+    )
+    for attempt, delay in enumerate((2, 4, 6, 8, 10), 1):
+        time.sleep(delay)
+        records = lark_records(lark)
+        selected, duplicates = select_day_records(records, today)
+        print(
+            f"read-back attempt {attempt}/5 records={len(records)} "
+            f"sales={sorted(selected)} duplicates={sorted(duplicates)}",
+            flush=True,
+        )
+        if not duplicates and set(selected) == {*DISPLAY.values(), "Total"}:
+            export_latest(records, today, destination)
+            return
+    raise RuntimeError(
+        f"X5 daily Lark read-back incomplete after 5 attempts: "
+        f"expected {sorted((*DISPLAY.values(), 'Total'))}, got {sorted(selected)}"
+    )
 
 
 def main():
@@ -185,7 +239,7 @@ def main():
     members = team_members(headers)
     rates, ib = exchange_rates(headers), ib_by_day(headers, args.month)
     lark = LarkTransport()
-    existing = {(fields.get("销售"), date_key(fields.get("日期"))): record for record in lark_records(lark) if (fields := record.get("fields", {}))}
+    existing = {(text_value(fields.get("销售")), date_key(fields.get("日期"))): record for record in lark_records(lark) if (fields := record.get("fields", {}))}
     all_days = []
     cursor = date(today.year, today.month, 1)
     while cursor <= today:
@@ -232,7 +286,7 @@ def main():
     write_plan(lark, creates, updates)
     if args.dashboard_export:
         print("phase=Lark snapshot read-back and dashboard export", flush=True)
-        export_latest(lark_records(lark), today, args.dashboard_export)
+        export_after_readback(lark, today, args.dashboard_export)
 
 
 if __name__ == "__main__":
