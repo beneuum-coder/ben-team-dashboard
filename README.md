@@ -18,7 +18,9 @@
 
 ## X5 Gross 自动刷新
 
-`.github/workflows/refresh-x5-dashboard.yml` 每小时运行一次，也可以在 GitHub 的 **Actions → Refresh X5 dashboard data → Run workflow** 手动运行。它会先使用现有 X5 CRM 统计逻辑同步到 Lark 的 `X5日度Gross`，在 Lark 读回成功后才更新并推送 `outputs/lark-dashboard-data.js`。任何一步失败都不会提交新的线上数据。
+`.github/workflows/refresh-x5-dashboard.yml` 每小时运行一次，也可以在 GitHub 的 **Actions → Refresh X5 dashboard data → Run workflow** 手动运行。它只计算今天的 MTD 快照，依次请求 4 位 X5 销售，在 Lark 读回成功后才更新并推送 `outputs/lark-dashboard-data.js`。
+
+`.github/workflows/calibrate-x5-dashboard.yml` 每天 23:17（上海时间）运行一次完整当月校准，也可以手动运行。它保留原来的“当月 1 日至今天”逐日回补逻辑。两个工作流任一步失败都不会提交新的线上数据。
 
 在仓库 **Settings → Secrets and variables → Actions** 中设置以下 Secrets：
 

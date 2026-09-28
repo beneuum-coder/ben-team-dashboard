@@ -174,6 +174,7 @@ def export_latest(records, today, destination):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--month", default=datetime.now(MSK).strftime("%Y-%m"))
+    parser.add_argument("--mode", choices=("current", "full"), default="full", help="current writes only today's MTD snapshot; full recalibrates every day this month")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--dashboard-export")
     args = parser.parse_args()
@@ -185,16 +186,33 @@ def main():
     rates, ib = exchange_rates(headers), ib_by_day(headers, args.month)
     lark = LarkTransport()
     existing = {(fields.get("销售"), date_key(fields.get("日期"))): record for record in lark_records(lark) if (fields := record.get("fields", {}))}
+    all_days = []
+    cursor = date(today.year, today.month, 1)
+    while cursor <= today:
+        all_days.append(cursor)
+        cursor += timedelta(days=1)
     cumulative = {name: {"master": 0, "sub": 0} for name in SALES}
     creates, updates = [], []
-    day = date(today.year, today.month, 1)
-    while day <= today:
+    total_requests = len(SALES) * (1 if args.mode == "current" else len(all_days))
+    completed_requests = 0
+    print(f"mode={args.mode} phase=CRM MTD statistics requests=0/{total_requests}", flush=True)
+    for day_index, day in enumerate(all_days, 1):
         day_s = day.isoformat()
-        end = datetime.now(MSK).strftime("%Y-%m-%d %H:%M:%S") if day == today else f"{day_s} 23:59:59"
         for name in SALES:
             cumulative[name]["master"] += ib[day_s][name]["master"]
             cumulative[name]["sub"] += ib[day_s][name]["sub"]
-        values = {name: stats(headers, *members[name], f"{args.month}-01", end, rates) for name in SALES}
+        if args.mode == "current" and day != today:
+            continue
+        end = datetime.now(MSK).strftime("%Y-%m-%d %H:%M:%S") if day == today else f"{day_s} 23:59:59"
+        print(f"date={day_s} day={day_index}/{len(all_days)} phase=CRM MTD statistics", flush=True)
+        values = {}
+        for name in SALES:
+            started = time.perf_counter()
+            print(f"date={day_s} sales={DISPLAY[name]} phase=CRM request start", flush=True)
+            values[name] = stats(headers, *members[name], f"{args.month}-01", end, rates)
+            completed_requests += 1
+            elapsed = time.perf_counter() - started
+            print(f"date={day_s} sales={DISPLAY[name]} phase=CRM request done elapsed={elapsed:.2f}s requests={completed_requests}/{total_requests}", flush=True)
         ben = values["Ben.Eu"]
         others = tuple(round(sum(values[name][i] for name in SALES if name != "Ben.Eu"), 2) for i in range(3))
         values["Ben.Eu"] = tuple(round(ben[i] - others[i], 2) for i in range(3))
@@ -210,8 +228,10 @@ def main():
     print(json.dumps({"create": len(creates), "update": len(updates), "delete": 0}, ensure_ascii=False))
     if not args.apply:
         return
+    print("phase=Lark snapshot write", flush=True)
     write_plan(lark, creates, updates)
     if args.dashboard_export:
+        print("phase=Lark snapshot read-back and dashboard export", flush=True)
         export_latest(lark_records(lark), today, args.dashboard_export)
 
 

@@ -1,9 +1,10 @@
-name: Refresh X5 dashboard data
+name: Calibrate X5 dashboard history
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 * * * *'
+    # 23:17 Asia/Shanghai (15:17 UTC): complete current-month history calibration.
+    - cron: '17 15 * * *'
 
 permissions:
   contents: write
@@ -13,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  refresh:
+  calibrate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +25,7 @@ jobs:
           python-version: '3.11'
       - name: Install runtime dependencies
         run: pip install requests pyotp
-      - name: Sync verified X5 MTD Gross to Lark
+      - name: Recalibrate verified X5 MTD Gross history to Lark
         env:
           CRM_USER: ${{ secrets.CRM_USER }}
           CRM_PASS: ${{ secrets.CRM_PASS }}
@@ -32,10 +33,10 @@ jobs:
           LARK_APP_ID: ${{ secrets.LARK_APP_ID }}
           LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
           LARK_APP_TOKEN: ${{ secrets.LARK_APP_TOKEN }}
-        run: python scripts/sync_x5_daily_gross.py --mode current --apply --dashboard-export "$RUNNER_TEMP/x5-dashboard-export.json"
+        run: python scripts/sync_x5_daily_gross.py --mode full --apply --dashboard-export "$RUNNER_TEMP/x5-dashboard-export.json"
       - name: Publish the verified X5 snapshot
         run: python scripts/publish_x5_dashboard_data.py --export "$RUNNER_TEMP/x5-dashboard-export.json"
-      - name: Commit refreshed dashboard data
+      - name: Commit calibrated dashboard data
         run: |
           if git diff --quiet -- outputs/lark-dashboard-data.js outputs/团队扩编与筛选体系框架-可视化编辑版.html; then
             echo "No dashboard data change to publish."
@@ -44,5 +45,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add outputs/lark-dashboard-data.js outputs/团队扩编与筛选体系框架-可视化编辑版.html
-          git commit -m "Refresh X5 dashboard snapshot"
+          git commit -m "Calibrate X5 dashboard snapshot"
           git push origin HEAD:main
