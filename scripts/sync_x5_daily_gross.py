@@ -189,7 +189,8 @@ def main():
     creates, updates = [], []
     day = date(today.year, today.month, 1)
     while day <= today:
-        day_s, end = day.isoformat(), (datetime.now(MSK).strftime("%Y-%m-%d %H:%M:%S") if day == today else f"{day_s} 23:59:59")
+        day_s = day.isoformat()
+        end = datetime.now(MSK).strftime("%Y-%m-%d %H:%M:%S") if day == today else f"{day_s} 23:59:59"
         for name in SALES:
             cumulative[name]["master"] += ib[day_s][name]["master"]
             cumulative[name]["sub"] += ib[day_s][name]["sub"]
