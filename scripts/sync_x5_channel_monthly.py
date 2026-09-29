@@ -83,6 +83,8 @@ def main():
     units["CPA/Elroy"]={"status":"NOT_CONFIGURED"};l=LarkTransport();existing,an=index_lark(lark_records(l,TABLE),a.month)
     if any(x["classification"]=="DUPLICATE_KEY" for x in an):raise RuntimeError("duplicate Lark business key")
     preview=classify(ib+cpa,existing);actions=[x for x in preview if x["classification"] in {"CREATE","UPDATE"}]
+    failed_sales={name.split("/",1)[1] for name,unit in units.items() if name.startswith("IB/") and unit["status"]=="FAIL"}
+    protected={k:json.dumps(record["fields"],ensure_ascii=False,sort_keys=True) for k,record in existing.items() if (k[1] in failed_sales and k[2]=="IB") or any(key(row)==k for row in preview if row.get("classification")=="SKIPPED_NO_MONTHLY_DATA")}
     result={"mode":"APPLY" if a.apply else "PREVIEW","larkWrite":a.apply,"units":units,"totals":dict(Counter(x["classification"] for x in preview)),"anomalies":an+issues}
     if a.apply:
         now=int(datetime.now(timezone.utc).timestamp()*1000)
@@ -91,6 +93,7 @@ def main():
             for i in range(0,len(records),100):l.request("POST",f"/bitable/v1/apps/{l.app}/tables/{TABLE}/records/batch_{kind.lower()}",{"records":records[i:i+100]})
         after,check=index_lark(lark_records(l,TABLE),a.month)
         if any(x["classification"]=="DUPLICATE_KEY" for x in check) or any(key(x) not in after or metrics(after[key(x)]["fields"])!={m:x[m] for m in METRICS} for x in actions):raise RuntimeError("read-back failed")
-        result["readBack"]={"businessKeyUnique":True,"actionsVerified":len(actions)}
+        if any(k not in after or json.dumps(after[k]["fields"],ensure_ascii=False,sort_keys=True)!=before for k,before in protected.items()):raise RuntimeError("read-back changed a skipped or failed-unit record")
+        result["readBack"]={"businessKeyUnique":True,"actionsVerified":len(actions),"skippedAndFailedRecordsPreserved":len(protected)}
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__":main()
