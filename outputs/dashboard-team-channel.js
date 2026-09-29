@@ -1,93 +1,64 @@
 (() => {
   const views = document.getElementById('manager-views');
   const channelNav = document.querySelector('[data-page="channels"]');
-  const state = {
-    selectedSales: 'all',
-    searchQuery: '',
-    statusFilter: 'all',
-    sortKey: 'gross',
-    sortDirection: -1,
-    selectedChannelId: null
-  };
+  const state = {selectedSales: 'all', selectedType: 'all', searchQuery: '', sortKey: 'gross', sortDirection: -1, selectedKey: null};
 
-  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[char]));
-  const money = value => '$' + Number(value || 0).toLocaleString('en-US', {
-    minimumFractionDigits: 2, maximumFractionDigits: 2
-  });
-  const asOfLabel = value => String(value || '').replace('T', ' ').slice(0, 16);
+  const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
+  const money = value => '$' + Number(value || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const number = value => Number(value || 0).toLocaleString('en-US');
+  const asOfLabel = value => String(value || '').replace('T', ' ').replace('Z', ' UTC').slice(0, 23);
+  const businessKey = row => [row.month, row.sales, row.type, row.channelId].join('|');
 
   function dataset() {
-    return window.LARK_CHANNEL_DATA;
+    return window.LARK_DASHBOARD_DATA?.x5ChannelMonthly;
   }
 
-  function selectedSummary(data) {
-    if (state.selectedSales === 'all') return data.teamSummary;
-    return data.salesSummary.find(summary => String(summary.salesId) === state.selectedSales);
-  }
-
-  function summaryMetric(summary, key) {
-    if (summary[key] !== undefined && summary[key] !== null) return summary[key];
-    return summary.totals?.[key];
-  }
-
-  function scopedChannels(data) {
-    return data.channelSnapshots.filter(channel =>
-      state.selectedSales === 'all' || String(channel.salesId) === state.selectedSales
-    );
-  }
-
-  function tableChannels(data) {
+  function scopedRows(data) {
     const query = state.searchQuery.trim().toLowerCase();
-    return scopedChannels(data)
-      .filter(channel => state.statusFilter === 'all' || channel.channelStatus === state.statusFilter)
-      .filter(channel => !query || (channel.channelName + ' ' + channel.channelId).toLowerCase().includes(query))
-      .sort((left, right) => {
-        const leftValue = Number(left[state.sortKey]) || 0;
-        const rightValue = Number(right[state.sortKey]) || 0;
-        return (leftValue - rightValue) * state.sortDirection;
-      });
+    return data.records
+      .filter(row => state.selectedSales === 'all' || row.sales === state.selectedSales)
+      .filter(row => state.selectedType === 'all' || row.type === state.selectedType)
+      .filter(row => !query || `${row.accountName} ${row.channelId}`.toLowerCase().includes(query))
+      .sort((left, right) => ((Number(left[state.sortKey]) || 0) - (Number(right[state.sortKey]) || 0)) * state.sortDirection);
+  }
+
+  function summary(rows) {
+    return rows.reduce((total, row) => ({
+      channels: total.channels + 1,
+      ib: total.ib + (row.type === 'IB' ? 1 : 0),
+      cpa: total.cpa + (row.type === 'CPA' ? 1 : 0),
+      registration: total.registration + Number(row.registration || 0),
+      ftd: total.ftd + Number(row.ftd || 0),
+      gross: total.gross + Number(row.gross || 0),
+      withdrawal: total.withdrawal + Number(row.withdrawal || 0),
+      net: total.net + Number(row.net || 0),
+    }), {channels: 0, ib: 0, cpa: 0, registration: 0, ftd: 0, gross: 0, withdrawal: 0, net: 0});
   }
 
   function closeDrawer() {
     document.querySelector('.channel-phase1-drawer')?.remove();
-    state.selectedChannelId = null;
+    state.selectedKey = null;
   }
 
-  function openDrawer(channelId) {
-    const data = dataset();
-    const channel = data?.channelSnapshots.find(row => String(row.channelId) === String(channelId));
-    if (!channel) return;
+  function openDrawer(key) {
+    const row = dataset()?.records.find(item => businessKey(item) === key);
+    if (!row) return;
     closeDrawer();
-    state.selectedChannelId = String(channel.channelId);
-
+    state.selectedKey = key;
     const fields = [
-      ['Sales', channel.salesName],
-      ['Channel ID', channel.channelId],
-      ['Channel Name', channel.channelName],
-      ['Channel Status', channel.channelStatus],
-      ['IB Level', channel.ibLevel],
-      ['Subtree Node Count', channel.subtreeNodeCount],
-      ['Client Count', channel.clientCount],
-      ['Registration', channel.registration],
-      ['FTD', channel.ftd],
-      ['Gross', money(channel.gross)],
-      ['Withdrawal', money(channel.withdrawal)],
-      ['Net', money(channel.net)],
-      ['Verification Status', channel.verificationStatus],
-      ['asOf', asOfLabel(channel.asOf)],
-      ['Source', channel.source]
+      ['月份', row.month], ['销售', row.sales], ['类型', row.type], ['渠道 ID', row.channelId],
+      ['IB/CPA 账户名称', row.accountName || '未提供'], ['Registration', number(row.registration)],
+      ['FTD', number(row.ftd)], ['Gross Deposit', money(row.gross)],
+      ['Withdrawal', money(row.withdrawal)], ['Net', money(row.net)], ['Lark 更新时间', asOfLabel(row.updatedAt)],
     ];
     const overlay = document.createElement('div');
     overlay.className = 'channel-phase1-drawer';
     overlay.innerHTML = '<aside class="channel-phase1-drawer-panel" role="dialog" aria-modal="true" aria-label="渠道详情">' +
       '<button class="channel-phase1-drawer-close" type="button" aria-label="关闭渠道详情">关闭</button>' +
-      '<h2 class="manager-title">' + escapeHtml(channel.channelName) + '</h2>' +
-      '<p class="manager-sub">CRM IB 渠道详情</p>' +
-      '<dl class="channel-phase1-detail">' + fields.map(([label, value]) =>
-        '<dt>' + escapeHtml(label) + '</dt><dd>' + escapeHtml(value) + '</dd>'
-      ).join('') + '</dl></aside>';
+      '<h2 class="manager-title">' + escapeHtml(row.accountName || row.channelId) + '</h2>' +
+      '<p class="manager-sub">X5 月度渠道表现</p><dl class="channel-phase1-detail">' +
+      fields.map(([label, value]) => '<dt>' + escapeHtml(label) + '</dt><dd>' + escapeHtml(value) + '</dd>').join('') +
+      '</dl></aside>';
     overlay.addEventListener('click', event => {
       if (event.target === overlay || event.target.closest('.channel-phase1-drawer-close')) closeDrawer();
     });
@@ -100,112 +71,63 @@
   }
 
   function kpi(value, label) {
-    return '<div class="kpi-card"><b>' + escapeHtml(value) + '</b><span>' +
-      escapeHtml(label) + '</span><span>CRM IB subtree</span></div>';
+    return '<div class="kpi-card"><b>' + escapeHtml(value) + '</b><span>' + escapeHtml(label) + '</span><span>X5 月度渠道</span></div>';
   }
 
   function renderChannels() {
     const data = dataset();
-    if (!data?.channelSnapshots || !data?.teamSummary || !Array.isArray(data.salesSummary)) {
-      views.innerHTML = '<div class="manager-view active"><h1 class="manager-title">渠道分析</h1><p class="manager-sub">CRM IB 渠道数据文件未加载。</p></div>';
+    if (!data?.month || !Array.isArray(data.records)) {
+      views.innerHTML = '<div class="manager-view active"><h1 class="manager-title">渠道分析</h1><p class="manager-sub">X5 月度渠道快照未加载；页面不会回退到旧 CRM 数据。</p></div>';
       return;
     }
-
-    const summary = selectedSummary(data);
-    if (!summary) {
-      state.selectedSales = 'all';
-      renderChannels();
-      return;
-    }
-    const scope = scopedChannels(data);
-    const rows = tableChannels(data);
-    const label = state.selectedSales === 'all' ? '团队 CRM IB 渠道' : summary.salesName + ' · CRM IB 渠道';
-    const coverage = data.coverage?.channelCoverageNote || '当前覆盖 CRM IB subtree。';
-    const verification = data.verification?.qaPassed ? 'QA 已验证' : '验证状态待确认';
-    const statusOptions = [
-      ['all', '全部状态'], ['active', '活跃'], ['inactive', '无活动'],
-      ['test_or_suspected', 'test_or_suspected'], ['unknown', 'unknown']
-    ];
+    const all = data.records;
+    const rows = scopedRows(data);
+    const totals = summary(all);
+    const sales = [...new Set(all.map(row => row.sales))].sort();
+    const qa = data.qa || {};
 
     views.innerHTML = '<div class="manager-view active">' +
-      '<h1 class="manager-title">' + escapeHtml(label) + '</h1>' +
-      '<p class="manager-sub">' + escapeHtml(data.datasetLabel || 'Team CRM IB Dataset') +
-        ' · ' + verification + ' · asOf ' + escapeHtml(asOfLabel(data.asOf)) + '</p>' +
-      '<div class="channel-phase1-note"><b>Coverage：</b>' + escapeHtml(coverage) + '<br><b>CPA：</b>未包含</div>' +
+      '<h1 class="manager-title">X5 月度渠道表现</h1>' +
+      '<p class="manager-sub">月份 ' + escapeHtml(data.month) + ' · ' + escapeHtml(data.source || 'Lark') + '</p>' +
+      '<div class="channel-phase1-note"><b>业务键 QA：</b>' + escapeHtml(qa.validBusinessKeys ?? all.length) +
+        ' 条有效记录，重复键 ' + escapeHtml(qa.duplicateBusinessKeys ?? '待确认') +
+        '。无效或占位记录不参与展示；缺少月度 CPA 的渠道不会被补零。</div>' +
       '<div class="kpi-row channel-phase1-kpis">' +
-        kpi(summaryMetric(summary, 'channelCount') ?? summary.topLevelIbCount, 'Top-level IB') +
-        kpi(summaryMetric(summary, 'activeChannelCount') ?? summary.activeIbCount, 'Active IB') +
-        kpi(summary.uniqueClientCount, 'Unique Clients') +
-        kpi(summaryMetric(summary, 'registration'), 'Registration') +
-        kpi(summaryMetric(summary, 'ftd'), 'FTD') +
-        kpi(money(summaryMetric(summary, 'gross')), 'Gross') +
-        kpi(money(summaryMetric(summary, 'withdrawal')), 'Withdrawal') +
-        kpi(money(summaryMetric(summary, 'net')), 'Net') +
+        kpi(totals.channels, '渠道数') + kpi(totals.ib, 'IB') + kpi(totals.cpa, 'CPA') +
+        kpi(number(totals.registration), 'Registration') + kpi(number(totals.ftd), 'FTD') +
+        kpi(money(totals.gross), 'Gross Deposit') + kpi(money(totals.withdrawal), 'Withdrawal') + kpi(money(totals.net), 'Net') +
       '</div><div class="manager-card"><div class="filters">' +
-        '<select id="channel-sales" aria-label="选择销售"><option value="all">全部团队</option>' +
-        data.salesSummary.map(item => '<option value="' + escapeHtml(item.salesId) + '">' +
-          escapeHtml(item.salesName) + '</option>').join('') + '</select>' +
-        '<input id="channel-search" value="' + escapeHtml(state.searchQuery) +
-          '" placeholder="搜索渠道名称或 Channel ID" aria-label="搜索渠道名称或 Channel ID">' +
-        '<select id="channel-status" aria-label="筛选渠道状态">' +
-        statusOptions.map(([value, text]) => '<option value="' + value + '"' +
-          (state.statusFilter === value ? ' selected' : '') + '>' + text + '</option>').join('') +
-        '</select></div><p class="quiet">当前显示 ' + rows.length + ' / ' + scope.length +
-        ' 个顶级 IB。搜索、状态和排序只影响主表，不影响已验证的 KPI 汇总。</p>' +
-      (rows.length ? '<table class="manager-table"><thead><tr>' +
-        '<th>Sales</th><th>渠道名称</th><th>状态</th><th>Subtree</th><th>Clients</th>' +
-        sortHead('Registration', 'registration') + sortHead('FTD', 'ftd') +
-        sortHead('Gross', 'gross') + sortHead('Withdrawal', 'withdrawal') + sortHead('Net', 'net') +
-        '<th>数据状态</th></tr></thead><tbody>' + rows.map(channel => '<tr>' +
-          '<td>' + escapeHtml(channel.salesName) + '</td>' +
-          '<td><button class="link-button" data-channel-id="' + escapeHtml(channel.channelId) + '">' +
-            escapeHtml(channel.channelName) + '</button></td>' +
-          '<td>' + escapeHtml(channel.channelStatus) + '</td><td>' + escapeHtml(channel.subtreeNodeCount) +
-          '</td><td>' + escapeHtml(channel.clientCount) + '</td><td>' + escapeHtml(channel.registration) +
-          '</td><td>' + escapeHtml(channel.ftd) + '</td><td>' + money(channel.gross) +
-          '</td><td>' + money(channel.withdrawal) + '</td><td>' + money(channel.net) +
-          '</td><td class="channel-phase1-status">' + escapeHtml(channel.verificationStatus) +
-          '</td></tr>').join('') + '</tbody></table>' :
-        '<p class="quiet">没有符合当前搜索或筛选条件的渠道。</p>') +
+        '<select id="channel-sales" aria-label="选择销售"><option value="all">全部销售</option>' +
+        sales.map(salesName => '<option value="' + escapeHtml(salesName) + '">' + escapeHtml(salesName) + '</option>').join('') +
+        '</select><select id="channel-type" aria-label="选择渠道类型"><option value="all">IB + CPA</option><option value="IB">IB</option><option value="CPA">CPA</option></select>' +
+        '<input id="channel-search" value="' + escapeHtml(state.searchQuery) + '" placeholder="搜索账户名称或渠道 ID" aria-label="搜索账户名称或渠道 ID">' +
+      '</div><p class="quiet">当前显示 ' + rows.length + ' / ' + all.length + ' 条有效渠道记录。筛选和排序不改变上方团队汇总。</p>' +
+      (rows.length ? '<table class="manager-table"><thead><tr><th>销售</th><th>类型</th><th>账户名称</th><th>渠道 ID</th>' +
+        sortHead('Registration', 'registration') + sortHead('FTD', 'ftd') + sortHead('Gross Deposit', 'gross') +
+        sortHead('Withdrawal', 'withdrawal') + sortHead('Net', 'net') + '<th>更新时间</th></tr></thead><tbody>' +
+        rows.map(row => '<tr><td>' + escapeHtml(row.sales) + '</td><td>' + escapeHtml(row.type) +
+          '</td><td><button class="link-button" data-channel-key="' + escapeHtml(businessKey(row)) + '">' +
+          escapeHtml(row.accountName || '未提供') + '</button></td><td>' + escapeHtml(row.channelId) +
+          '</td><td>' + number(row.registration) + '</td><td>' + number(row.ftd) + '</td><td>' + money(row.gross) +
+          '</td><td>' + money(row.withdrawal) + '</td><td>' + money(row.net) + '</td><td>' + escapeHtml(asOfLabel(row.updatedAt)) +
+          '</td></tr>').join('') + '</tbody></table>' : '<p class="quiet">没有符合当前筛选条件的渠道。</p>') +
       '</div></div>';
 
     const salesSelect = document.getElementById('channel-sales');
+    const typeSelect = document.getElementById('channel-type');
     salesSelect.value = state.selectedSales;
-    salesSelect.addEventListener('change', event => {
-      closeDrawer();
-      state.selectedSales = event.target.value;
-      renderChannels();
-    });
-    document.getElementById('channel-search').addEventListener('input', event => {
-      state.searchQuery = event.target.value;
-      renderChannels();
-    });
-    document.getElementById('channel-status').addEventListener('change', event => {
-      state.statusFilter = event.target.value;
-      renderChannels();
-    });
+    typeSelect.value = state.selectedType;
+    salesSelect.addEventListener('change', event => { state.selectedSales = event.target.value; closeDrawer(); renderChannels(); });
+    typeSelect.addEventListener('change', event => { state.selectedType = event.target.value; closeDrawer(); renderChannels(); });
+    document.getElementById('channel-search').addEventListener('input', event => { state.searchQuery = event.target.value; renderChannels(); });
     document.querySelectorAll('[data-channel-sort]').forEach(header => {
-      const sort = () => {
-        const key = header.dataset.channelSort;
-        state.sortDirection = state.sortKey === key ? -state.sortDirection : -1;
-        state.sortKey = key;
-        renderChannels();
-      };
+      const sort = () => { const key = header.dataset.channelSort; state.sortDirection = state.sortKey === key ? -state.sortDirection : -1; state.sortKey = key; renderChannels(); };
       header.addEventListener('click', sort);
-      header.addEventListener('keydown', event => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          sort();
-        }
-      });
+      header.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); sort(); } });
     });
-    document.querySelectorAll('[data-channel-id]').forEach(button => {
-      button.addEventListener('click', () => openDrawer(button.dataset.channelId));
-    });
+    document.querySelectorAll('[data-channel-key]').forEach(button => button.addEventListener('click', () => openDrawer(button.dataset.channelKey)));
   }
 
-  document.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && state.selectedChannelId) closeDrawer();
-  });
-  channelNav.addEventListener('click', renderChannels);
+  document.addEventListener('keydown', event => { if (event.key === 'Escape' && state.selectedKey) closeDrawer(); });
+  channelNav?.addEventListener('click', renderChannels);
 })();

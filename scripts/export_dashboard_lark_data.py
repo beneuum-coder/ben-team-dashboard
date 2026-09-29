@@ -18,6 +18,7 @@ from sync_x5_daily_gross import DISPLAY, LarkTransport, lark_fields, lark_record
 TEAM_MANAGEMENT = "tblorZ8JzhmicRfB"
 TEAM_SUMMARY = "tblUn0uqcKU7KOVF"
 X5_DAILY = "tbl9L956hdRmwd2g"
+X5_CHANNEL_MONTHLY = "tblOJxbrBo7zs997"
 PEOPLE = ("Rita", "Kelly", "Elroy", "Lulu", "Ben")
 X5_NAMES = ("Rita", "Ben", "Kelly", "Elroy")
 CUSTOMER_TABLES = {
@@ -105,6 +106,18 @@ def month_label(value):
     return key[:7] if key else ""
 
 
+def lark_datetime(value):
+    """Render a native Lark timestamp for display without changing its instant."""
+    if not value:
+        return ""
+    if isinstance(value, str) and "T" in value:
+        return value
+    try:
+        return datetime.fromtimestamp(int(value) / 1000, timezone.utc).isoformat().replace("+00:00", "Z")
+    except (TypeError, ValueError):
+        return ""
+
+
 def month_index(hire, now):
     if not hire:
         return None
@@ -136,6 +149,76 @@ def sum_schedule_leads(rows):
     return int(sum(number(row["lead"]) for row in ordered))
 
 
+def normalize_x5_channel_monthly(records):
+    """Return the newest valid monthly-channel slice and fail on duplicate keys.
+
+    The Lark table can intentionally retain blank historical placeholders.  They
+    are not business records, so they remain in Lark but are excluded here.
+    """
+    candidates = []
+    for record in records:
+        fields = record.get("fields", {})
+        month = month_label(fields.get("月份"))
+        sales = text(fields.get("销售")).strip()
+        channel_type = text(fields.get("类型")).strip()
+        channel_id = text(fields.get("渠道ID")).strip()
+        if month and sales and channel_type and channel_id:
+            candidates.append((month, record, fields))
+    if not candidates:
+        raise RuntimeError("X5渠道月度表现 has no valid business-key records")
+
+    target_month = max(month for month, _, _ in candidates)
+    rows, keys = [], set()
+    ignored_placeholder = 0
+    invalid_key = 0
+    ignored_other_month = 0
+    for record in records:
+        fields = record.get("fields", {})
+        month = month_label(fields.get("月份"))
+        if month != target_month:
+            ignored_other_month += 1
+            continue
+        sales = text(fields.get("销售")).strip()
+        channel_type = text(fields.get("类型")).strip()
+        channel_id = text(fields.get("渠道ID")).strip()
+        if not any((sales, channel_type, channel_id)):
+            ignored_placeholder += 1
+            continue
+        if not all((sales, channel_type, channel_id)):
+            invalid_key += 1
+            continue
+        business_key = (month, sales, channel_type, channel_id)
+        if business_key in keys:
+            raise RuntimeError(f"X5渠道月度表现 has duplicate business key: {business_key}")
+        keys.add(business_key)
+        rows.append({
+            "month": month,
+            "sales": sales,
+            "type": channel_type,
+            "channelId": channel_id,
+            "accountName": text(fields.get("IB/CPA账户名称")).strip(),
+            "registration": nullable_number(fields.get("Registration")),
+            "ftd": nullable_number(fields.get("FTD")),
+            "gross": nullable_number(fields.get("Gross Deposit")),
+            "withdrawal": nullable_number(fields.get("Withdrawal")),
+            "net": nullable_number(fields.get("Net")),
+            "updatedAt": lark_datetime(fields.get("更新时间")),
+        })
+    rows.sort(key=lambda row: (row["sales"], row["type"], row["channelId"]))
+    return {
+        "month": target_month,
+        "source": "Lark X5渠道月度表现",
+        "records": rows,
+        "qa": {
+            "validBusinessKeys": len(rows),
+            "duplicateBusinessKeys": 0,
+            "ignoredPlaceholder": ignored_placeholder,
+            "invalidKey": invalid_key,
+            "ignoredOtherMonth": ignored_other_month,
+        },
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--x5-export", required=True)
@@ -156,9 +239,16 @@ def main():
     customer_records = {name: load_table(lark, table, f"{name}客户记录表", {"时间", "姓名", "国家", "联系方式", "来源", "客户类型", "联系渠道", "意向度", "转化", "记录"}) for name, table in CUSTOMER_TABLES.items()}
     schedule_records = {name: load_schedule_table(lark, table, f"{name}日程表") for name, table in SCHEDULE_TABLES.items()}
     x5_records = load_table(lark, X5_DAILY, "X5日度Gross", {"销售", "日期", "入金(USD)", "出金(USD)", "净入金(USD)", "Master IB", "Sub IB", "更新时间"})
+    x5_channel_monthly_records = load_table(
+        lark,
+        X5_CHANNEL_MONTHLY,
+        "X5渠道月度表现",
+        {"月份", "销售", "渠道ID", "IB/CPA账户名称", "类型", "Registration", "FTD", "Gross Deposit", "Withdrawal", "Net", "更新时间"},
+    )
     x5_today, x5_duplicates = select_day_records(x5_records, datetime.fromisoformat(export_date).date())
     if x5_duplicates or set(x5_today) != expected_x5:
         raise RuntimeError(f"X5日度Gross does not contain one verified snapshot for {export_date}")
+    x5_channel_monthly = normalize_x5_channel_monthly(x5_channel_monthly_records)
 
     now = datetime.now(timezone.utc)
     month = export_date[:7]
@@ -266,6 +356,7 @@ def main():
         "trends": {name: [history[name][label] for label in sorted(history[name])] for name in PEOPLE},
         "teamGrossTrend": [team_history[label] for label in sorted(team_history)],
         "teamCompletion": current_value(total_fields, "当月入金完成度"),
+        "x5ChannelMonthly": x5_channel_monthly,
     }
     Path(args.output).write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"dashboard export complete people={len(people)} issues={len(issues)} customers={len(customers)}", flush=True)

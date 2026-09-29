@@ -32,10 +32,13 @@ def main():
     data_path = Path(args.data)
     if args.dashboard_export:
         data = json.loads(Path(args.dashboard_export).read_text(encoding="utf-8"))
-        required = {"generatedAt", "dashboardDataUpdatedAt", "people", "issues", "customers", "trends", "teamGrossTrend", "teamCompletion"}
+        required = {"generatedAt", "dashboardDataUpdatedAt", "people", "issues", "customers", "trends", "teamGrossTrend", "teamCompletion", "x5ChannelMonthly"}
         missing = required - set(data)
         if missing:
             raise RuntimeError(f"Dashboard export is incomplete: missing {sorted(missing)}")
+        channel_monthly = data["x5ChannelMonthly"]
+        if not channel_monthly.get("records") or channel_monthly.get("qa", {}).get("duplicateBusinessKeys") != 0:
+            raise RuntimeError("Dashboard channel-monthly export did not pass business-key QA")
     else:
         raw = data_path.read_text(encoding="utf-8").strip()
         if not raw.startswith(PREFIX) or not raw.endswith(";"):
