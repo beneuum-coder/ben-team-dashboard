@@ -1,239 +1,96 @@
 #!/usr/bin/env python3
-"""Preview or upsert one sales owner's CellXpert channel month into Lark.
-
-The established CRM login and request helpers are reused unchanged.  CRM does
-not presently expose a CellXpert AffiliateID on its channel-level reports, so
-this first-stage sync deliberately refuses to allocate salesperson totals to
-individual channels.  Per-channel financial metrics come from CellXpert's
-monthly process report; the CRM probe is retained to make that missing join
-explicit rather than silently mixing incompatible sources.
-"""
-import argparse
-import json
-import os
-from datetime import date, datetime, timedelta, timezone
-
+"""Single current-month X5 IB + CPA preview/upsert entry point."""
+import argparse, json, os, subprocess, sys, uuid
+from collections import Counter
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 import requests
+from sync_x5_daily_gross import LarkTransport, lark_records, text_value
 
-from sync_x5_daily_gross import LarkTransport, crm_login, lark_records, post, team_members
+TABLE="tblOJxbrBo7zs997"; TZ=timezone(timedelta(hours=8))
+METRICS=("registration","ftd","gross","withdrawal","net")
+FIELDS={"registration":"Registration","ftd":"FTD","gross":"Gross Deposit","withdrawal":"Withdrawal","net":"Net"}
+CPA_MANAGERS={"BenEu":"Ben","RitaEU":"Rita","KellyLin":"Kelly"}
+SALES=("Ben","Rita","Kelly","Elroy")
 
-
-TABLE = "tblOJxbrBo7zs997"
-SHANGHAI = timezone(timedelta(hours=8))
-SALES = {
-    "Rita": {"crm": "Rita.EU", "cellxpert_manager": "RitaEU"},
-}
-REQUIRED_FIELDS = {
-    "月份", "销售", "渠道ID", "IB/CPA账户名称", "类型", "Registration",
-    "FTD", "Gross Deposit", "Withdrawal", "Net", "更新时间",
-}
-
-
-def numeric(value):
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def text(value):
-    if isinstance(value, list):
-        return "".join(text(item) for item in value)
-    if isinstance(value, dict):
-        return str(value.get("text") or value.get("name") or "")
-    return "" if value is None else str(value)
-
-
-def lark_day(value):
-    if not value:
-        return ""
-    if isinstance(value, str) and len(value) >= 10:
-        return value[:10]
-    return datetime.fromtimestamp(int(value) / 1000, SHANGHAI).date().isoformat()
-
-
-def cellxpert_headers():
-    response = requests.post(
-        "https://go.ultimamarkets.com/adminlogin/loginadmin.asp",
-        data={"command": "logon", "user": os.environ["CX_USER"], "password": os.environ["CX_PASS"], "json": 1},
-        headers={"Content-Type": "application/x-www-form-urlencoded"}, timeout=30,
-    )
-    response.raise_for_status()
-    token = response.json().get("message")
-    if not token:
-        raise RuntimeError("CellXpert login returned no access token")
-    return {"Authorization": f"Bearer {token}", "admin_url": "Ultimarkets"}
-
-
-def cellxpert_get(headers, command, **params):
-    response = requests.get(
-        "https://adminapi.cellxpert.com/", params={"command": command, "json": 1, **params},
-        headers=headers, timeout=60,
-    )
-    response.raise_for_status()
-    return response.json()
-
-
-def crm_channel_probe(sales, month):
-    """Use the existing CRM account request without changing its logic.
-
-    This is evidence only.  Its records identify newly approved customer/IB
-    relationships but have no CellXpert AffiliateID, so they cannot be used to
-    split month-to-date money between CellXpert channels.
-    """
-    headers = crm_login()
-    uid, org = team_members(headers)[SALES[sales]["crm"]]
-    last_day = (date.fromisoformat(f"{month}-01").replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-    payload = {
-        "skipCount": True, "pagination": {"limit": 9999, "pageNo": None},
-        "parameters": {
-            "approvedTime": {"filterType": "DATEPICKER", "input": {"startDate": f"{month}-01 00:00:00", "endDate": f"{last_day:%Y-%m-%d} 23:59:59"}},
-            "is_archive": {"filterType": "SELECT", "input": "0"},
-            "directLevel": {"filterType": "CUSTOM", "input": "5"},
-            "user_id": {"filterType": "CUSTOM", "input": uid},
-            "org_id": {"filterType": "CUSTOM", "input": org},
-        },
-    }
-    rows = post(headers, "/account/query_rebateAccountList", payload).get("rows", [])
-    owned = [row for row in rows if row.get("ownerAlias") == SALES[sales]["crm"]]
-    return {
-        "newly_approved_rows": len(owned),
-        "crm_rebate_account_ids": sorted({str(row.get("rebateAccount")) for row in owned if row.get("rebateAccount")}),
-    }
-
-
-def cellxpert_channels(sales, month):
-    headers = cellxpert_headers()
-    affiliates = cellxpert_get(headers, "browseaffiliatesjson").get("ManageAffiliatesData", [])
-    manager = SALES[sales]["cellxpert_manager"]
-    active = [row for row in affiliates if str(row.get("AffiliateManager", "")).lower() == manager.lower() and str(row.get("Status", "")).lower() == "approved"]
-    start = datetime.fromisoformat(f"{month}-01").strftime("%-m/%-d/%Y")
-    end = datetime.now(SHANGHAI).strftime("%-m/%-d/%Y")
-    report = cellxpert_get(headers, "processreport", Affiliate="true", BTA="true", startDate=start, endDate=end, uniqueId=1)
-    if not isinstance(report, list):
-        raise RuntimeError("CellXpert processreport returned an invalid payload")
-    by_id = {str(row.get("BTA")): row for row in report if row.get("BTA") is not None}
-    rows, warnings = [], []
-    for affiliate in active:
-        channel_id = str(affiliate.get("AffiliateID") or "")
-        if not channel_id:
-            raise RuntimeError("Approved CellXpert affiliate is missing AffiliateID")
-        report_row = by_id.get(channel_id)
-        if report_row is None:
-            warnings.append(f"missing_current_month_processreport channel_id={channel_id}")
-        metrics = report_row or {}
-        rows.append({
-            "month": month,
-            "sales": sales,
-            "channelId": channel_id,
-            "accountName": text(affiliate.get("Username")),
-            # CellXpert's Affiliate directory has no reliable IB/CPA category.
-            "type": None,
-            "registration": numeric(metrics.get("Registrations")),
-            "ftd": numeric(metrics.get("FTD")),
-            "grossDeposit": numeric(metrics.get("Deposits")),
-            # CellXpert returns withdrawals as negative values; Lark stores an outflow magnitude.
-            "withdrawal": abs(numeric(metrics.get("Withdrawals"))) if numeric(metrics.get("Withdrawals")) is not None else None,
-            "net": numeric(metrics.get("Net_Deposits")),
-            "sources": {
-                "channelId": "CellXpert AffiliateID", "accountName": "CellXpert Username",
-                "type": "unavailable: no confirmed CRM/CellXpert classification",
-                "registration": "CellXpert processreport.Registrations", "ftd": "CellXpert processreport.FTD",
-                "grossDeposit": "CellXpert processreport.Deposits", "withdrawal": "CellXpert processreport.Withdrawals",
-                "net": "CellXpert processreport.Net_Deposits",
-            },
-        })
-    return rows, warnings
-
-
-def lark_payload(row, now):
-    fields = {
-        "月份": int(datetime.fromisoformat(f"{row['month']}-01").replace(tzinfo=SHANGHAI).timestamp() * 1000),
-        "销售": row["sales"], "渠道ID": row["channelId"], "IB/CPA账户名称": row["accountName"],
-        "更新时间": int(now.timestamp() * 1000),
-    }
-    # Explicit nulls clear previously published values when a source row is
-    # absent, rather than retaining a stale month-to-date number.
-    for field, key in (("Registration", "registration"), ("FTD", "ftd"), ("Gross Deposit", "grossDeposit"), ("Withdrawal", "withdrawal"), ("Net", "net")):
-        fields[field] = row[key]
-    fields["类型"] = row["type"]
-    return fields
-
-
-def upsert_plan(lark, rows, now):
-    field_names = {field.get("field_name") for field in lark.request("GET", f"/bitable/v1/apps/{lark.app}/tables/{TABLE}/fields").get("data", {}).get("items", [])}
-    missing = REQUIRED_FIELDS - field_names
-    if missing:
-        raise RuntimeError(f"X5渠道月度表现 schema missing fields: {sorted(missing)}")
-    existing = lark_records(lark, TABLE)
-    by_key = {}
-    for record in existing:
-        fields = record.get("fields", {})
-        key = (lark_day(fields.get("月份"))[:7], text(fields.get("销售")), text(fields.get("渠道ID")))
-        fallback = (key[0], key[1], text(fields.get("IB/CPA账户名称")))
-        lookups = []
-        if key[2]:
-            lookups.append(key)
-        if fallback[2] and fallback != key:
-            lookups.append(fallback)
-        for lookup in lookups:
-            if lookup in by_key:
-                raise RuntimeError(f"Duplicate existing Lark channel key: {lookup}")
-            by_key[lookup] = record["record_id"]
-    creates, updates = [], []
-    for row in rows:
-        key = (row["month"], row["sales"], row["channelId"])
-        fallback = (row["month"], row["sales"], row["accountName"])
-        record_id = by_key.get(key) or by_key.get(fallback)
-        payload = {"fields": lark_payload(row, now)}
-        if record_id:
-            updates.append({"record_id": record_id, **payload})
-        else:
-            creates.append(payload)
-    return creates, updates
-
-
-def write(lark, action, records):
-    for index in range(0, len(records), 100):
-        lark.request("POST", f"/bitable/v1/apps/{lark.app}/tables/{TABLE}/records/{action}", {"records": records[index:index + 100]})
-
-
-def verify_readback(lark, rows):
-    records = lark_records(lark, TABLE)
-    for row in rows:
-        matches = [record for record in records if (
-            lark_day(record.get("fields", {}).get("月份"))[:7],
-            text(record.get("fields", {}).get("销售")),
-            text(record.get("fields", {}).get("渠道ID")),
-        ) == (row["month"], row["sales"], row["channelId"])]
-        if len(matches) != 1:
-            raise RuntimeError(f"Lark upsert read-back expected one record for channel {row['channelId']}, got {len(matches)}")
-
-
+def num(v):
+    try:return round(float(v),2)
+    except (TypeError,ValueError):return None
+def month(v): return v[:7] if isinstance(v,str) else (datetime.fromtimestamp(int(v)/1000,TZ).strftime("%Y-%m") if v else "")
+def key(r): return (r["month"],r["sales"],r["type"],str(r["channelId"]).strip())
+def metrics(f): return {k:num(f.get(n)) for k,n in FIELDS.items()}
+def index_lark(records,target):
+    result,issues={},[]
+    for record in records:
+        f=record.get("fields",{})
+        if month(f.get("月份"))!=target: continue
+        row={"month":target,"sales":text_value(f.get("销售")).strip(),"type":text_value(f.get("类型")).strip(),"channelId":text_value(f.get("渠道ID")).strip()}
+        if not any((row["sales"],row["type"],row["channelId"])): issues.append({"classification":"IGNORED_PLACEHOLDER","recordId":record["record_id"]});continue
+        if not all((row["sales"],row["type"],row["channelId"])): issues.append({"classification":"INVALID_KEY","recordId":record["record_id"],**row});continue
+        if key(row) in result: issues.append({"classification":"DUPLICATE_KEY","key":key(row)});continue
+        result[key(row)]=record
+    return result,issues
+def classify(rows,existing):
+    out=[];seen=set()
+    for r in rows:
+        if r.get("classification")=="SKIPPED_NO_MONTHLY_DATA":out.append(r);continue
+        if not all((r.get("sales"),r.get("type"),r.get("channelId"),r.get("channelName"))) or not all(r.get(x) is not None for x in METRICS) or key(r) in seen:out.append({"classification":"INVALID_KEY",**r});continue
+        seen.add(key(r)); old=existing.get(key(r))
+        if not old:out.append({"classification":"CREATE",**r});continue
+        out.append({"classification":"UPDATE" if metrics(old["fields"])!={x:r[x] for x in METRICS} else "UNCHANGED","recordId":old["record_id"],**r})
+    return out
+def cx_headers():
+    r=requests.post("https://go.ultimamarkets.com/adminlogin/loginadmin.asp",data={"command":"logon","user":os.environ["CX_USER"],"password":os.environ["CX_PASS"],"json":1},headers={"Content-Type":"application/x-www-form-urlencoded"},timeout=30);r.raise_for_status()
+    return {"Authorization":"Bearer "+r.json()["message"],"admin_url":"Ultimarkets"}
+def cpa_rows(target):
+    h=cx_headers();aff= requests.get("https://adminapi.cellxpert.com/",params={"command":"browseaffiliatesjson","json":1},headers=h,timeout=60).json().get("ManageAffiliatesData",[])
+    rep=requests.get("https://adminapi.cellxpert.com/",params={"command":"processreport","json":1,"Affiliate":"true","BTA":"true","startDate":datetime.fromisoformat(target+"-01").strftime("%-m/%-d/%Y"),"endDate":datetime.now(TZ).strftime("%-m/%-d/%Y"),"uniqueId":1},headers=h,timeout=60).json()
+    if not isinstance(rep,list):raise RuntimeError("invalid CellXpert processreport")
+    by={str(x.get("BTA")):x for x in rep if x.get("BTA") not in (None,"")};rows=[];issues=[]
+    for a in aff:
+        if str(a.get("Status","")).casefold()!="approved":continue
+        mgr=str(a.get("AffiliateManager") or "").strip();cid=str(a.get("AffiliateID") or "").strip();name=str(a.get("Username") or a.get("AffiliateName") or "").strip()
+        if mgr not in CPA_MANAGERS:issues.append({"classification":"UNMAPPED_MANAGER","manager":mgr,"channelId":cid});continue
+        base={"month":target,"sales":CPA_MANAGERS[mgr],"type":"CPA","channelId":cid,"channelName":name}
+        if not cid or not name:issues.append({"classification":"INVALID_KEY",**base});continue
+        d=by.get(cid)
+        if d is None:rows.append({"classification":"SKIPPED_NO_MONTHLY_DATA",**base});continue
+        w=num(d.get("Withdrawals"));rows.append({**base,"registration":num(d.get("Registrations")),"ftd":num(d.get("FTD")),"gross":num(d.get("Deposits")),"withdrawal":abs(w) if w is not None else None,"net":num(d.get("Net_Deposits"))})
+    return rows,issues
+def run_ib(target):
+    run="x5-monthly-"+uuid.uuid4().hex;asof=datetime.now(TZ).isoformat();root=Path("work/x5-monthly")/run
+    base=[sys.executable,"scripts/ben_ib_monthly_preview.py","--as-of",asof,"--run-id",run,"--checkpoint-dir",str(root/"ben")]
+    ben=json.loads(subprocess.check_output(base,text=True)); rows=[];units={"IB/Ben":{"status":"PASS","discovered":len(ben["report"])}}
+    for x in ben["report"]: rows.append({"month":target,"sales":"Ben","type":"IB","channelId":str(x["channel_id"]),"channelName":x["channel_name"],"registration":x["registration"],"ftd":x["ftd"],"gross":x["gross_deposit"],"withdrawal":x["withdrawal"],"net":x["net"]})
+    teamcmd=[sys.executable,"scripts/team_ib_phase1b.py","--as-of",asof,"--run-id",run,"--checkpoint-dir",str(root/"team")]
+    subprocess.check_output(teamcmd,text=True)
+    result=json.loads(next((root/"team"/"runs"/run).glob("*-results.json")).read_text()); failed={x["sales"].replace(".EU","").replace(".Lin","").replace(".Chuan","") for x in result["failures"]}
+    for sale in SALES[1:]:
+        raw={"Rita":"Rita.EU","Kelly":"Kelly.Lin","Elroy":"Elroy.Chuan"}[sale]
+        unit=[x for x in result["channels"] if x["sales"]==raw]
+        if sale in failed:units["IB/"+sale]={"status":"FAIL","discovered":0};continue
+        units["IB/"+sale]={"status":"PASS","discovered":len(unit)}
+        rows.extend({"month":target,"sales":sale,"type":"IB","channelId":str(x["channel_id"]),"channelName":x["channel_name"],"registration":x["registration"],"ftd":x["ftd"],"gross":x["gross_deposit"],"withdrawal":x["withdrawal"],"net":x["net"]} for x in unit)
+    return rows,units
+def payload(r,now):
+    return {"月份":int(datetime.fromisoformat(r["month"]+"-01").replace(tzinfo=TZ).timestamp()*1000),"销售":r["sales"],"渠道ID":r["channelId"],"IB/CPA账户名称":r["channelName"],"类型":r["type"],"Registration":r["registration"],"FTD":r["ftd"],"Gross Deposit":r["gross"],"Withdrawal":r["withdrawal"],"Net":r["net"],"更新时间":now}
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--sales", default="Rita", choices=sorted(SALES))
-    parser.add_argument("--month", default=datetime.now(SHANGHAI).strftime("%Y-%m"))
-    parser.add_argument("--apply", action="store_true", help="Apply the printed create/update plan to Lark")
-    args = parser.parse_args()
-    if args.month != datetime.now(SHANGHAI).strftime("%Y-%m"):
-        raise RuntimeError("This first-stage verifier supports the current month only")
-    crm_probe = crm_channel_probe(args.sales, args.month)
-    rows, warnings = cellxpert_channels(args.sales, args.month)
-    crm_probe["matching_cellxpert_channel_ids"] = sorted(
-        set(crm_probe["crm_rebate_account_ids"]) & {row["channelId"] for row in rows}
-    )
-    now = datetime.now(timezone.utc)
-    lark = LarkTransport()
-    creates, updates = upsert_plan(lark, rows, now)
-    result = {"month": args.month, "sales": args.sales, "crmProbe": crm_probe, "channels": rows, "warnings": warnings, "plan": {"create": len(creates), "update": len(updates)}}
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    if args.apply:
-        write(lark, "batch_create", creates)
-        write(lark, "batch_update", updates)
-        verify_readback(lark, rows)
-        print(json.dumps({"applied": {"create": len(creates), "update": len(updates)}}, ensure_ascii=False))
-
-
-if __name__ == "__main__":
-    main()
+    p=argparse.ArgumentParser();p.add_argument("--apply",action="store_true");p.add_argument("--month",default=datetime.now(TZ).strftime("%Y-%m"));a=p.parse_args()
+    if a.month!=datetime.now(TZ).strftime("%Y-%m"):raise RuntimeError("current month only")
+    ib,units=run_ib(a.month)
+    try:cpa,issues=cpa_rows(a.month);units.update({"CPA/"+s:{"status":"PASS"} for s in SALES[:3]})
+    except Exception as e:cpa=[];issues=[{"classification":"SOURCE_FAIL","source":"CPA","reason":str(e)}];units.update({"CPA/"+s:{"status":"FAIL","reason":str(e)} for s in SALES[:3]})
+    units["CPA/Elroy"]={"status":"NOT_CONFIGURED"};l=LarkTransport();existing,an=index_lark(lark_records(l,TABLE),a.month)
+    if any(x["classification"]=="DUPLICATE_KEY" for x in an):raise RuntimeError("duplicate Lark business key")
+    preview=classify(ib+cpa,existing);actions=[x for x in preview if x["classification"] in {"CREATE","UPDATE"}]
+    result={"mode":"APPLY" if a.apply else "PREVIEW","larkWrite":a.apply,"units":units,"totals":dict(Counter(x["classification"] for x in preview)),"anomalies":an+issues}
+    if a.apply:
+        now=int(datetime.now(timezone.utc).timestamp()*1000)
+        for kind in ("CREATE","UPDATE"):
+            rs=[x for x in actions if x["classification"]==kind]; records=[{"fields":payload(x,now)} if kind=="CREATE" else {"record_id":x["recordId"],"fields":payload(x,now)} for x in rs]
+            for i in range(0,len(records),100):l.request("POST",f"/bitable/v1/apps/{l.app}/tables/{TABLE}/records/batch_{kind.lower()}",{"records":records[i:i+100]})
+        after,check=index_lark(lark_records(l,TABLE),a.month)
+        if any(x["classification"]=="DUPLICATE_KEY" for x in check) or any(key(x) not in after or metrics(after[key(x)]["fields"])!={m:x[m] for m in METRICS} for x in actions):raise RuntimeError("read-back failed")
+        result["readBack"]={"businessKeyUnique":True,"actionsVerified":len(actions)}
+    print(json.dumps(result,ensure_ascii=False,indent=2))
+if __name__=="__main__":main()
