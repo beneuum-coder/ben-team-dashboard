@@ -134,21 +134,23 @@ class LarkTransport:
         return payload
 
 
-def lark_records(lark):
+def lark_records(lark, table=TABLE):
     items, page_token = [], None
     while True:
         body = {"page_size": 500}
         if page_token:
             body["page_token"] = page_token
-        data = lark.request("POST", f"/bitable/v1/apps/{lark.app}/tables/{TABLE}/records/search", body).get("data", {})
+        data = lark.request("POST", f"/bitable/v1/apps/{lark.app}/tables/{table}/records/search", body).get("data", {})
         items.extend(data.get("items", []))
         if not data.get("has_more"):
             return items
         page_token = data.get("page_token")
+        if not page_token:
+            raise RuntimeError(f"Lark pagination ended without a page token for table {table}")
 
 
-def lark_fields(lark):
-    return lark.request("GET", f"/bitable/v1/apps/{lark.app}/tables/{TABLE}/fields").get("data", {}).get("items", [])
+def lark_fields(lark, table=TABLE):
+    return lark.request("GET", f"/bitable/v1/apps/{lark.app}/tables/{table}/fields").get("data", {}).get("items", [])
 
 
 def write_plan(lark, creates, updates):

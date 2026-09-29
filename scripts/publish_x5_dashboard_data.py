@@ -20,6 +20,7 @@ def number(value):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--export", required=True)
+    parser.add_argument("--dashboard-export", help="Complete read-only Dashboard Lark export to publish atomically")
     parser.add_argument("--data", default="outputs/lark-dashboard-data.js")
     parser.add_argument("--html", default="outputs/团队扩编与筛选体系框架-可视化编辑版.html")
     args = parser.parse_args()
@@ -29,10 +30,17 @@ def main():
     if set(records) != expected:
         raise RuntimeError("Refusing to publish an incomplete X5 export")
     data_path = Path(args.data)
-    raw = data_path.read_text(encoding="utf-8").strip()
-    if not raw.startswith(PREFIX) or not raw.endswith(";"):
-        raise RuntimeError("Unexpected dashboard data file format")
-    data = json.loads(raw[len(PREFIX):-1])
+    if args.dashboard_export:
+        data = json.loads(Path(args.dashboard_export).read_text(encoding="utf-8"))
+        required = {"generatedAt", "dashboardDataUpdatedAt", "people", "issues", "customers", "trends", "teamGrossTrend", "teamCompletion"}
+        missing = required - set(data)
+        if missing:
+            raise RuntimeError(f"Dashboard export is incomplete: missing {sorted(missing)}")
+    else:
+        raw = data_path.read_text(encoding="utf-8").strip()
+        if not raw.startswith(PREFIX) or not raw.endswith(";"):
+            raise RuntimeError("Unexpected dashboard data file format")
+        data = json.loads(raw[len(PREFIX):-1])
     people = {person.get("name"): person for person in data.get("people", [])}
     if not set(X5_NAMES).issubset(people):
         raise RuntimeError("Dashboard snapshot is missing an X5 salesperson")
@@ -65,13 +73,15 @@ def main():
     team.sort(key=lambda row: row.get("label", ""))
     data["grossDataUpdatedAt"] = datetime.fromtimestamp(int(exported["updatedAt"]) / 1000, timezone.utc).isoformat().replace("+00:00", "Z")
     data["grossDataSource"] = "X5 daily MTD Gross snapshot"
-    data_path.write_text(PREFIX + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + ";\n", encoding="utf-8")
+    rendered_data = PREFIX + json.dumps(data, ensure_ascii=False, separators=(",", ":")) + ";\n"
     revision = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     html_path = Path(args.html)
     html = html_path.read_text(encoding="utf-8")
     html, count = re.subn(r"lark-dashboard-data[.]js[?]rev=[^\"']+", f"lark-dashboard-data.js?rev={revision}", html, count=1)
     if count != 1:
         raise RuntimeError("Dashboard HTML does not contain the expected data script")
+    # All validation is complete before either deployable artifact is replaced.
+    data_path.write_text(rendered_data, encoding="utf-8")
     html_path.write_text(html, encoding="utf-8")
     print(f"Published X5 data for {exported['date']} at {data['grossDataUpdatedAt']}")
 

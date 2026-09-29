@@ -33,8 +33,14 @@ jobs:
           LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
           LARK_APP_TOKEN: ${{ secrets.LARK_APP_TOKEN }}
         run: python scripts/sync_x5_daily_gross.py --mode current --apply --dashboard-export "$RUNNER_TEMP/x5-dashboard-export.json"
-      - name: Publish the verified X5 snapshot
-        run: python scripts/publish_x5_dashboard_data.py --export "$RUNNER_TEMP/x5-dashboard-export.json"
+      - name: Export all Dashboard Lark data
+        env:
+          LARK_APP_ID: ${{ secrets.LARK_APP_ID }}
+          LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
+          LARK_APP_TOKEN: ${{ secrets.LARK_APP_TOKEN }}
+        run: python scripts/export_dashboard_lark_data.py --x5-export "$RUNNER_TEMP/x5-dashboard-export.json" --output "$RUNNER_TEMP/dashboard-lark-export.json"
+      - name: Publish the complete verified Dashboard snapshot
+        run: python scripts/publish_x5_dashboard_data.py --export "$RUNNER_TEMP/x5-dashboard-export.json" --dashboard-export "$RUNNER_TEMP/dashboard-lark-export.json"
       - name: Commit refreshed dashboard data
         run: |
           if git diff --quiet -- outputs/lark-dashboard-data.js outputs/团队扩编与筛选体系框架-可视化编辑版.html; then
