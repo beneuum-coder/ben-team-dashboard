@@ -81,7 +81,8 @@
       return;
     }
     const all = data.records;
-    const rows = scopedRows(data);
+    const rankedRows = scopedRows(data);
+    const rows = rankedRows.slice(0, 10);
     const totals = summary(all);
     const sales = [...new Set(all.map(row => row.sales))].sort();
     const qa = data.qa || {};
@@ -101,7 +102,7 @@
         sales.map(salesName => '<option value="' + escapeHtml(salesName) + '">' + escapeHtml(salesName) + '</option>').join('') +
         '</select><select id="channel-type" aria-label="选择渠道类型"><option value="all">IB + CPA</option><option value="IB">IB</option><option value="CPA">CPA</option></select>' +
         '<input id="channel-search" value="' + escapeHtml(state.searchQuery) + '" placeholder="搜索账户名称或渠道 ID" aria-label="搜索账户名称或渠道 ID">' +
-      '</div><p class="quiet">当前显示 ' + rows.length + ' / ' + all.length + ' 条有效渠道记录。筛选和排序不改变上方团队汇总。</p>' +
+      '</div><p class="quiet">当前展示筛选及排序结果的前 ' + rows.length + ' 条（共 ' + rankedRows.length + ' 条有效渠道记录）。筛选和排序不改变上方团队汇总。</p>' +
       (rows.length ? '<table class="manager-table"><thead><tr><th>销售</th><th>类型</th><th>账户名称</th><th>渠道 ID</th>' +
         sortHead('Registration', 'registration') + sortHead('FTD', 'ftd') + sortHead('Gross Deposit', 'gross') +
         sortHead('Withdrawal', 'withdrawal') + sortHead('Net', 'net') + '<th>更新时间</th></tr></thead><tbody>' +
