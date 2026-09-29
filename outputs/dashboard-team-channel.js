@@ -74,6 +74,11 @@
     return '<div class="kpi-card"><b>' + escapeHtml(value) + '</b><span>' + escapeHtml(label) + '</span><span>X5 月度渠道</span></div>';
   }
 
+  function filterButton(label, attribute, value, selected) {
+    return '<button type="button" class="bd-action' + (selected ? ' primary' : '') +
+      '" data-channel-' + attribute + '="' + escapeHtml(value) + '">' + escapeHtml(label) + '</button>';
+  }
+
   function renderChannels() {
     const data = dataset();
     if (!data?.month || !Array.isArray(data.records)) {
@@ -98,9 +103,14 @@
         kpi(number(totals.registration), 'Registration') + kpi(number(totals.ftd), 'FTD') +
         kpi(money(totals.gross), 'Gross Deposit') + kpi(money(totals.withdrawal), 'Withdrawal') + kpi(money(totals.net), 'Net') +
       '</div><div class="manager-card"><div class="filters">' +
-        '<select id="channel-sales" aria-label="选择销售"><option value="all">全部销售</option>' +
-        sales.map(salesName => '<option value="' + escapeHtml(salesName) + '">' + escapeHtml(salesName) + '</option>').join('') +
-        '</select><select id="channel-type" aria-label="选择渠道类型"><option value="all">IB + CPA</option><option value="IB">IB</option><option value="CPA">CPA</option></select>' +
+        '<div class="channel-phase1-filter-group" role="group" aria-label="选择销售"><span>销售</span>' +
+        filterButton('全部', 'sales', 'all', state.selectedSales === 'all') +
+        sales.map(salesName => filterButton(salesName, 'sales', salesName, state.selectedSales === salesName)).join('') +
+        '</div><div class="channel-phase1-filter-group" role="group" aria-label="选择渠道类型"><span>类型</span>' +
+        filterButton('全部', 'type', 'all', state.selectedType === 'all') +
+        filterButton('IB', 'type', 'IB', state.selectedType === 'IB') +
+        filterButton('CPA', 'type', 'CPA', state.selectedType === 'CPA') +
+        '</div>' +
         '<input id="channel-search" value="' + escapeHtml(state.searchQuery) + '" placeholder="搜索账户名称或渠道 ID" aria-label="搜索账户名称或渠道 ID">' +
       '</div><p class="quiet">当前展示筛选及排序结果的前 ' + rows.length + ' 条（共 ' + rankedRows.length + ' 条有效渠道记录）。筛选和排序不改变上方团队汇总。</p>' +
       (rows.length ? '<table class="manager-table"><thead><tr><th>销售</th><th>类型</th><th>账户名称</th><th>渠道 ID</th>' +
@@ -114,12 +124,16 @@
           '</td></tr>').join('') + '</tbody></table>' : '<p class="quiet">没有符合当前筛选条件的渠道。</p>') +
       '</div></div>';
 
-    const salesSelect = document.getElementById('channel-sales');
-    const typeSelect = document.getElementById('channel-type');
-    salesSelect.value = state.selectedSales;
-    typeSelect.value = state.selectedType;
-    salesSelect.addEventListener('change', event => { state.selectedSales = event.target.value; closeDrawer(); renderChannels(); });
-    typeSelect.addEventListener('change', event => { state.selectedType = event.target.value; closeDrawer(); renderChannels(); });
+    document.querySelectorAll('[data-channel-sales]').forEach(button => button.addEventListener('click', () => {
+      state.selectedSales = button.dataset.channelSales;
+      closeDrawer();
+      renderChannels();
+    }));
+    document.querySelectorAll('[data-channel-type]').forEach(button => button.addEventListener('click', () => {
+      state.selectedType = button.dataset.channelType;
+      closeDrawer();
+      renderChannels();
+    }));
     document.getElementById('channel-search').addEventListener('input', event => { state.searchQuery = event.target.value; renderChannels(); });
     document.querySelectorAll('[data-channel-sort]').forEach(header => {
       const sort = () => { const key = header.dataset.channelSort; state.sortDirection = state.sortKey === key ? -state.sortDirection : -1; state.sortKey = key; renderChannels(); };
