@@ -150,10 +150,10 @@ def sum_schedule_leads(rows):
 
 
 def normalize_x5_channel_monthly(records):
-    """Return the newest valid monthly-channel slice and fail on duplicate keys.
+    """Return valid X5 channel rows from September 2026 onward, by month.
 
-    The Lark table can intentionally retain blank historical placeholders.  They
-    are not business records, so they remain in Lark but are excluded here.
+    The public dashboard uses this history only for month comparison. Blank
+    placeholders stay excluded, and each month keeps its own business-key QA.
     """
     candidates = []
     for record in records:
@@ -167,15 +167,24 @@ def normalize_x5_channel_monthly(records):
     if not candidates:
         raise RuntimeError("X5渠道月度表现 has no valid business-key records")
 
-    target_month = max(month for month, _, _ in candidates)
-    rows, keys = [], set()
+    start_month = "2026-09"
+    available_months = sorted({month for month, _, _ in candidates if month >= start_month})
+    if not available_months:
+        raise RuntimeError("X5渠道月度表现 has no valid records from September 2026 onward")
+
+    rows = []
+    keys_by_month = {month: set() for month in available_months}
+    qa_by_month = {
+        month: {"validBusinessKeys": 0, "duplicateBusinessKeys": 0}
+        for month in available_months
+    }
     ignored_placeholder = 0
     invalid_key = 0
     ignored_other_month = 0
     for record in records:
         fields = record.get("fields", {})
         month = month_label(fields.get("月份"))
-        if month != target_month:
+        if month not in qa_by_month:
             ignored_other_month += 1
             continue
         sales = text(fields.get("销售")).strip()
@@ -188,9 +197,10 @@ def normalize_x5_channel_monthly(records):
             invalid_key += 1
             continue
         business_key = (month, sales, channel_type, channel_id)
-        if business_key in keys:
+        if business_key in keys_by_month[month]:
             raise RuntimeError(f"X5渠道月度表现 has duplicate business key: {business_key}")
-        keys.add(business_key)
+        keys_by_month[month].add(business_key)
+        qa_by_month[month]["validBusinessKeys"] += 1
         rows.append({
             "month": month,
             "sales": sales,
@@ -204,9 +214,10 @@ def normalize_x5_channel_monthly(records):
             "net": nullable_number(fields.get("Net")),
             "updatedAt": lark_datetime(fields.get("更新时间")),
         })
-    rows.sort(key=lambda row: (row["sales"], row["type"], row["channelId"]))
+    rows.sort(key=lambda row: (row["month"], row["sales"], row["type"], row["channelId"]))
     return {
-        "month": target_month,
+        "month": available_months[-1],
+        "months": available_months,
         "source": "Lark X5渠道月度表现",
         "records": rows,
         "qa": {
@@ -215,6 +226,7 @@ def normalize_x5_channel_monthly(records):
             "ignoredPlaceholder": ignored_placeholder,
             "invalidKey": invalid_key,
             "ignoredOtherMonth": ignored_other_month,
+            "byMonth": qa_by_month,
         },
     }
 

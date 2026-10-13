@@ -1,7 +1,7 @@
 (() => {
   const views = document.getElementById('manager-views');
   const channelNav = document.querySelector('[data-page="channels"]');
-  const state = {selectedSales: 'all', selectedType: 'all', searchQuery: '', sortKey: 'gross', sortDirection: -1, selectedKey: null};
+  const state = {selectedMonth: null, selectedSales: 'all', selectedType: 'all', searchQuery: '', sortKey: 'gross', sortDirection: -1, selectedKey: null};
 
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[char]));
   const money = value => '$' + Number(value || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
@@ -16,10 +16,25 @@
   function scopedRows(data) {
     const query = state.searchQuery.trim().toLowerCase();
     return data.records
+      .filter(row => row.month === state.selectedMonth)
       .filter(row => state.selectedSales === 'all' || row.sales === state.selectedSales)
       .filter(row => state.selectedType === 'all' || row.type === state.selectedType)
       .filter(row => !query || `${row.accountName} ${row.channelId}`.toLowerCase().includes(query))
       .sort((left, right) => ((Number(left[state.sortKey]) || 0) - (Number(right[state.sortKey]) || 0)) * state.sortDirection);
+  }
+
+  function salesPerformance(rows) {
+    const bySales = new Map();
+    rows.filter(row => row.type === 'IB').forEach(row => {
+      const item = bySales.get(row.sales) || {sales: row.sales, channels: 0, registration: 0, ftd: 0, gross: 0, net: 0};
+      item.channels += 1;
+      item.registration += Number(row.registration || 0);
+      item.ftd += Number(row.ftd || 0);
+      item.gross += Number(row.gross || 0);
+      item.net += Number(row.net || 0);
+      bySales.set(row.sales, item);
+    });
+    return [...bySales.values()].sort((left, right) => right.gross - left.gross);
   }
 
   function summary(rows) {
@@ -85,16 +100,22 @@
       views.innerHTML = '<div class="manager-view active"><h1 class="manager-title">渠道分析</h1><p class="manager-sub">X5 月度渠道快照未加载；页面不会回退到旧 CRM 数据。</p></div>';
       return;
     }
-    const all = data.records;
+    const months = Array.isArray(data.months) && data.months.length ? data.months : [data.month];
+    if (!months.includes(state.selectedMonth)) state.selectedMonth = months[months.length - 1];
+    const all = data.records.filter(row => row.month === state.selectedMonth);
     const rankedRows = scopedRows(data);
     const rows = rankedRows.slice(0, 10);
     const totals = summary(all);
     const sales = [...new Set(all.map(row => row.sales))].sort();
-    const qa = data.qa || {};
+    const ibPerformance = salesPerformance(all);
+    const qa = data.qa?.byMonth?.[state.selectedMonth] || data.qa || {};
 
     views.innerHTML = '<div class="manager-view active">' +
       '<h1 class="manager-title">X5 月度渠道表现</h1>' +
-      '<p class="manager-sub">月份 ' + escapeHtml(data.month) + ' · ' + escapeHtml(data.source || 'Lark') + '</p>' +
+      '<p class="manager-sub">月份 ' + escapeHtml(state.selectedMonth) + ' · ' + escapeHtml(data.source || 'Lark') + '</p>' +
+      '<div class="channel-phase1-months" role="group" aria-label="选择月份"><span>月份</span>' +
+        months.map(month => filterButton(month, 'month', month, state.selectedMonth === month)).join('') +
+      '</div>' +
       '<div class="channel-phase1-note"><b>业务键 QA：</b>' + escapeHtml(qa.validBusinessKeys ?? all.length) +
         ' 条有效记录，重复键 ' + escapeHtml(qa.duplicateBusinessKeys ?? '待确认') +
         '。无效或占位记录不参与展示；缺少月度 CPA 的渠道不会被补零。</div>' +
@@ -102,6 +123,10 @@
         kpi(totals.channels, '渠道数') + kpi(totals.ib, 'IB') + kpi(totals.cpa, 'CPA') +
         kpi(number(totals.registration), 'Registration') + kpi(number(totals.ftd), 'FTD') +
         kpi(money(totals.gross), 'Gross Deposit') + kpi(money(totals.withdrawal), 'Withdrawal') + kpi(money(totals.net), 'Net') +
+      '</div><div class="manager-card channel-phase1-ranking"><div class="channel-phase1-ranking-heading"><div><h3>销售月度 IB 表现</h3><p class="quiet">按 Gross Deposit 排名，仅统计 IB 渠道，可快速比较哪个销售在所选月份表现更好。</p></div><span class="channel-phase1-status">' + escapeHtml(state.selectedMonth) + '</span></div>' +
+      (ibPerformance.length ? '<table class="manager-table"><thead><tr><th>销售</th><th>IB 渠道数</th><th>Registration</th><th>FTD</th><th>Gross Deposit</th><th>Net</th></tr></thead><tbody>' +
+        ibPerformance.map(row => '<tr><td><b>' + escapeHtml(row.sales) + '</b></td><td>' + number(row.channels) + '</td><td>' + number(row.registration) + '</td><td>' + number(row.ftd) + '</td><td>' + money(row.gross) + '</td><td>' + money(row.net) + '</td></tr>').join('') +
+        '</tbody></table>' : '<p class="quiet">所选月份没有可比较的 IB 渠道数据。</p>') +
       '</div><div class="manager-card"><div class="filters">' +
         '<div class="channel-phase1-filter-group" role="group" aria-label="选择销售"><span>销售</span>' +
         filterButton('全部', 'sales', 'all', state.selectedSales === 'all') +
@@ -124,6 +149,14 @@
           '</td></tr>').join('') + '</tbody></table>' : '<p class="quiet">没有符合当前筛选条件的渠道。</p>') +
       '</div></div>';
 
+    document.querySelectorAll('[data-channel-month]').forEach(button => button.addEventListener('click', () => {
+      state.selectedMonth = button.dataset.channelMonth;
+      state.selectedSales = 'all';
+      state.selectedType = 'all';
+      state.searchQuery = '';
+      closeDrawer();
+      renderChannels();
+    }));
     document.querySelectorAll('[data-channel-sales]').forEach(button => button.addEventListener('click', () => {
       state.selectedSales = button.dataset.channelSales;
       closeDrawer();
