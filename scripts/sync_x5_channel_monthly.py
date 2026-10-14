@@ -68,7 +68,9 @@ def run_ib(target):
     for sale in SALES[1:]:
         raw={"Rita":"Rita.EU","Kelly":"Kelly.Lin","Elroy":"Elroy.Chuan"}[sale]
         unit=[x for x in result["channels"] if x["sales"]==raw]
-        if sale in failed:units["IB/"+sale]={"status":"FAIL","discovered":0};continue
+        if sale in failed:
+            units["IB/"+sale]={"status":"FAIL","discovered":0,"failures":[item for item in result["failures"] if item["sales"]==raw]}
+            continue
         units["IB/"+sale]={"status":"PASS","discovered":len(unit)}
         rows.extend({"month":target,"sales":sale,"type":"IB","channelId":str(x["channel_id"]),"channelName":x["channel_name"],"registration":x["registration"],"ftd":x["ftd"],"gross":x["gross_deposit"],"withdrawal":x["withdrawal"],"net":x["net"]} for x in unit)
     return rows,units

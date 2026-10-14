@@ -98,7 +98,7 @@ def main():
                     global_owners[uid]=(sales_name,channel_id)
                 persist("calculation_partial", sales_name, channel_id)
             except Exception as exc:
-                checkpoint.write_text(json.dumps({"schemaVersion":SCHEMA_VERSION,"runId":run_id,"asOf":args.as_of,"month":MONTH,"salesId":sales_id,"topLevelChannelId":channel_id,"status":"failed","error":str(exc),"sourceMetadata":source},ensure_ascii=False)); failures.append({"sales":sales_name,"channelId":channel_id}); persist("calculation_partial", sales_name, channel_id)
+                checkpoint.write_text(json.dumps({"schemaVersion":SCHEMA_VERSION,"runId":run_id,"asOf":args.as_of,"month":MONTH,"salesId":sales_id,"topLevelChannelId":channel_id,"status":"failed","error":str(exc),"sourceMetadata":source},ensure_ascii=False)); failures.append({"sales":sales_name,"channelId":channel_id,"reason":str(exc)}); persist("calculation_partial", sales_name, channel_id)
         own=[r for r in team_rows if r["sales"]==sales_name]; sales_summary.append({"sales":sales_name,"topIbCount":len(channels),"active":sum(r["channel_status"]=="active" for r in own),"totals":{k:round(sum(r[k] for r in own),2) for k in ("registration","ftd","gross_deposit","withdrawal","net")}})
     status="complete" if len(team_rows)==expected and not failures else "calculation_partial"
     result={"schemaVersion":SCHEMA_VERSION,"runId":run_id,"asOf":args.as_of,"month":MONTH,"status":status,"sales":sales_summary,"channels":team_rows,"clientUidOwner":{uid:{"sales":owner[0],"topLevelIb":owner[1]} for uid,owner in global_owners.items()},"crossSalesUidOverlap":overlaps,"failures":failures,"cpaIncluded":False}
