@@ -86,6 +86,12 @@ def main():
     failed_sales={name.split("/",1)[1] for name,unit in units.items() if name.startswith("IB/") and unit["status"]=="FAIL"}
     protected={k:json.dumps(record["fields"],ensure_ascii=False,sort_keys=True) for k,record in existing.items() if (k[1] in failed_sales and k[2]=="IB") or any(key(row)==k for row in preview if row.get("classification")=="SKIPPED_NO_MONTHLY_DATA")}
     result={"mode":"APPLY" if a.apply else "PREVIEW","larkWrite":a.apply,"units":units,"totals":dict(Counter(x["classification"] for x in preview)),"anomalies":an+issues}
+    failed_ib_sales = sorted(name.split("/", 1)[1] for name, unit in units.items() if name.startswith("IB/") and unit["status"] == "FAIL")
+    if a.apply and failed_ib_sales:
+        result["larkWrite"] = False
+        result["writeBlocked"] = {"reason": "incomplete_ib_source", "failedSales": failed_ib_sales}
+        print(json.dumps(result,ensure_ascii=False,indent=2))
+        raise RuntimeError(f"refusing Lark write with failed IB source units: {', '.join(failed_ib_sales)}")
     if a.apply:
         now=int(datetime.now(timezone.utc).timestamp()*1000)
         for kind in ("CREATE","UPDATE"):
