@@ -42,11 +42,24 @@ jobs:
           LARK_APP_SECRET: ${{ secrets.LARK_APP_SECRET }}
           LARK_APP_TOKEN: ${{ secrets.LARK_APP_TOKEN }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.apply }}" != "true" ]; then
-            python scripts/sync_x5_channel_monthly.py | tee "$RUNNER_TEMP/x5-channel-preview.json"
-          else
-            python scripts/sync_x5_channel_monthly.py --apply | tee "$RUNNER_TEMP/x5-channel-apply.json"
-          fi
+          set -o pipefail
+          run_sync() {
+            if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.apply }}" != "true" ]; then
+              python scripts/sync_x5_channel_monthly.py | tee "$RUNNER_TEMP/x5-channel-preview.json"
+            else
+              python scripts/sync_x5_channel_monthly.py --apply | tee "$RUNNER_TEMP/x5-channel-apply.json"
+            fi
+          }
+          for attempt in 1 2 3; do
+            if run_sync; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "X5 channel source attempt $attempt failed; retrying in 30 seconds."
+              sleep 30
+            fi
+          done
+          exit 1
       - name: Refresh published dashboard snapshot
         if: github.event_name != 'workflow_dispatch' || inputs.apply == true
         env:
