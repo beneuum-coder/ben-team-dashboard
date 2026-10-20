@@ -40,8 +40,10 @@ def classify(rows,existing):
         out.append({"classification":"UPDATE" if metrics(old["fields"])!={x:r[x] for x in METRICS} else "UNCHANGED","recordId":old["record_id"],**r})
     return out
 def cx_headers():
-    r=requests.post("https://go.ultimamarkets.com/adminlogin/loginadmin.asp",data={"command":"logon","user":os.environ["CX_USER"],"password":os.environ["CX_PASS"],"json":1},headers={"Content-Type":"application/x-www-form-urlencoded"},timeout=30);r.raise_for_status()
-    return {"Authorization":"Bearer "+r.json()["message"],"admin_url":"Ultimarkets"}
+    r=requests.post("https://go.ultimamarkets.com/authenticate/admin-auth",data={"user":os.environ["CX_USER"],"pass":os.environ["CX_PASS"],"url":"Ultimarkets"},headers={"Content-Type":"application/x-www-form-urlencoded","admin_url":"Ultimarkets"},timeout=30);r.raise_for_status()
+    token=r.json().get("token")
+    if not token: raise RuntimeError("CellXpert login returned no access token")
+    return {"Authorization":"Bearer "+token,"admin_url":"Ultimarkets"}
 def cpa_rows(target):
     h=cx_headers();aff= requests.get("https://adminapi.cellxpert.com/",params={"command":"browseaffiliatesjson","json":1},headers=h,timeout=60).json().get("ManageAffiliatesData",[])
     rep=requests.get("https://adminapi.cellxpert.com/",params={"command":"processreport","json":1,"Affiliate":"true","BTA":"true","startDate":datetime.fromisoformat(target+"-01").strftime("%-m/%-d/%Y"),"endDate":datetime.now(TZ).strftime("%-m/%-d/%Y"),"uniqueId":1},headers=h,timeout=60).json()
