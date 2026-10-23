@@ -18,16 +18,37 @@ START, END = f"{MONTH}-01 00:00:00", datetime.now(SHANGHAI).strftime("%Y-%m-%d %
 SCHEMA_VERSION = "2.0"
 
 
-def all_ben_nodes(headers):
-    rows, page = [], 1
+def all_ben_nodes(headers, page_size=50):
+    rows, page, seen, expected_total = [], 1, set(), None
     while True:
-        payload = {"skipCount": False, "pagination": {"limit": 200, "pageNo": page, "offset": (page - 1) * 200, "order": "asc", "sort": ""},
+        if page > 500:
+            raise RuntimeError("Ben IB node pagination exceeded 500 pages")
+        payload = {"skipCount": False, "pagination": {"limit": page_size, "pageNo": page, "offset": (page - 1) * page_size, "order": "asc", "sort": ""},
                    "parameters": {"directLevel": {"filterType": "CUSTOM", "input": "5"}, "user_id": {"filterType": "CUSTOM", "input": BEN_UID}}}
         result = post(headers, "/user/query_userList", payload, 180)
-        batch = result.get("rows", [])
+        batch = result.get("rows")
+        if not isinstance(batch, list):
+            raise RuntimeError("Ben IB node page has no rows list")
+        if page == 1 and not batch:
+            raise RuntimeError("Ben IB node discovery returned no rows")
+        if result.get("total") is None:
+            raise RuntimeError("Ben IB node page has no total count")
+        reported_total = int(result["total"])
+        if expected_total is None:
+            expected_total = reported_total
+        elif reported_total != expected_total:
+            raise RuntimeError("Ben IB node total changed during pagination")
+        ids = [value(row, "user_id", "userId") for row in batch]
+        if not all(ids) or len(set(ids)) != len(ids) or seen.intersection(ids):
+            raise RuntimeError("Ben IB node pagination has missing or duplicate IDs")
+        seen.update(ids)
         rows.extend(batch)
-        if len(batch) < 200 or len(rows) >= int(result.get("total", 0)):
+        if len(rows) > expected_total:
+            raise RuntimeError("Ben IB node pagination exceeded reported total")
+        if len(rows) == expected_total:
             return rows
+        if len(batch) < page_size:
+            raise RuntimeError("Ben IB node pagination ended before reported total")
         page += 1
 
 

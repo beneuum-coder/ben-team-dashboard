@@ -17,15 +17,30 @@ START, END = f"{MONTH}-01 00:00:00", datetime.now(SHANGHAI).strftime("%Y-%m-%d %
 SCHEMA_VERSION = "2.0"
 
 
-def sales_nodes(headers, sales_id):
-    rows, page = [], 1
+def sales_nodes(headers, sales_id, page_size=50):
+    rows, page, seen, expected_total = [], 1, set(), None
     while True:
-        body = {"skipCount": False, "pagination": {"limit": 200, "pageNo": page, "offset": (page - 1) * 200, "order": "asc", "sort": ""},
+        if page > 500:
+            raise RuntimeError("Team IB node pagination exceeded 500 pages")
+        body = {"skipCount": False, "pagination": {"limit": page_size, "pageNo": page, "offset": (page - 1) * page_size, "order": "asc", "sort": ""},
                 "parameters": {"directLevel": {"filterType": "CUSTOM", "input": "5"}, "user_id": {"filterType": "CUSTOM", "input": sales_id}}}
         result = post(headers, "/user/query_userList", body, 180)
-        batch = result.get("rows", []); rows.extend(batch)
-        if len(batch) < 200 or len(rows) >= int(result.get("total", 0)):
+        batch = result.get("rows")
+        if not isinstance(batch, list): raise RuntimeError("Team IB node page has no rows list")
+        if page == 1 and not batch: raise RuntimeError("Team IB node discovery returned no rows")
+        if result.get("total") is None: raise RuntimeError("Team IB node page has no total count")
+        reported_total = int(result["total"])
+        if expected_total is None: expected_total = reported_total
+        elif reported_total != expected_total: raise RuntimeError("Team IB node total changed during pagination")
+        ids = [value(row, "user_id", "userId") for row in batch]
+        if not all(ids) or len(set(ids)) != len(ids) or seen.intersection(ids):
+            raise RuntimeError("Team IB node pagination has missing or duplicate IDs")
+        seen.update(ids); rows.extend(batch)
+        if len(rows) > expected_total:
+            raise RuntimeError("Team IB node pagination exceeded reported total")
+        if len(rows) == expected_total:
             return rows
+        if len(batch) < page_size: raise RuntimeError("Team IB node pagination ended before reported total")
         page += 1
 
 
