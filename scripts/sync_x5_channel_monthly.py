@@ -45,8 +45,12 @@ def cx_headers():
     if not token: raise RuntimeError("CellXpert login returned no access token")
     return {"Authorization":"Bearer "+token,"admin_url":"Ultimarkets"}
 def cpa_rows(target):
-    h=cx_headers();aff= requests.get("https://adminapi.cellxpert.com/",params={"command":"browseaffiliatesjson","json":1},headers=h,timeout=60).json().get("ManageAffiliatesData",[])
-    rep=requests.get("https://adminapi.cellxpert.com/",params={"command":"processreport","json":1,"Affiliate":"true","BTA":"true","startDate":datetime.fromisoformat(target+"-01").strftime("%-m/%-d/%Y"),"endDate":datetime.now(TZ).strftime("%-m/%-d/%Y"),"uniqueId":1},headers=h,timeout=60).json()
+    h=cx_headers();affiliate_response=requests.get("https://adminapi.cellxpert.com/",params={"command":"browseaffiliatesjson","json":1},headers=h,timeout=60)
+    affiliate_response.raise_for_status();affiliate_data=affiliate_response.json()
+    aff=affiliate_data.get("ManageAffiliatesData") if isinstance(affiliate_data,dict) else None
+    if not isinstance(aff,list) or not aff:raise RuntimeError("invalid or empty CellXpert affiliate list")
+    report_response=requests.get("https://adminapi.cellxpert.com/",params={"command":"processreport","json":1,"Affiliate":"true","BTA":"true","startDate":datetime.fromisoformat(target+"-01").strftime("%-m/%-d/%Y"),"endDate":datetime.now(TZ).strftime("%-m/%-d/%Y"),"uniqueId":1},headers=h,timeout=60)
+    report_response.raise_for_status();rep=report_response.json()
     if not isinstance(rep,list):raise RuntimeError("invalid CellXpert processreport")
     by={str(x.get("BTA")):x for x in rep if x.get("BTA") not in (None,"")};rows=[];issues=[]
     for a in aff:
@@ -62,11 +66,15 @@ def cpa_rows(target):
 def run_ib(target):
     run="x5-monthly-"+uuid.uuid4().hex;asof=datetime.now(TZ).isoformat();root=Path("work/x5-monthly")/run
     base=[sys.executable,"scripts/ben_ib_monthly_preview.py","--as-of",asof,"--run-id",run,"--checkpoint-dir",str(root/"ben")]
-    ben=json.loads(subprocess.check_output(base,text=True)); rows=[];units={"IB/Ben":{"status":"PASS","discovered":len(ben["report"])}}
+    ben=json.loads(subprocess.check_output(base,text=True))
+    if ben.get("status")!="complete" or ben.get("month")!=target:raise RuntimeError("Ben IB source is incomplete or has the wrong month")
+    rows=[];units={"IB/Ben":{"status":"PASS","discovered":len(ben["report"])}}
     for x in ben["report"]: rows.append({"month":target,"sales":"Ben","type":"IB","channelId":str(x["channel_id"]),"channelName":x["channel_name"],"registration":x["registration"],"ftd":x["ftd"],"gross":x["gross_deposit"],"withdrawal":x["withdrawal"],"net":x["net"]})
     teamcmd=[sys.executable,"scripts/team_ib_phase1b.py","--as-of",asof,"--run-id",run,"--checkpoint-dir",str(root/"team")]
     subprocess.check_output(teamcmd,text=True)
-    result=json.loads(next((root/"team"/"runs"/run).glob("*-results.json")).read_text()); failed={x["sales"].replace(".EU","").replace(".Lin","").replace(".Chuan","") for x in result["failures"]}
+    result=json.loads(next((root/"team"/"runs"/run).glob("*-results.json")).read_text())
+    if result.get("status")!="complete" or result.get("month")!=target:raise RuntimeError("Team IB source is incomplete or has the wrong month")
+    failed={x["sales"].replace(".EU","").replace(".Lin","").replace(".Chuan","") for x in result["failures"]}
     for sale in SALES[1:]:
         raw={"Rita":"Rita.EU","Kelly":"Kelly.Lin","Elroy":"Elroy.Chuan"}[sale]
         unit=[x for x in result["channels"] if x["sales"]==raw]
@@ -84,9 +92,13 @@ def main():
     ib,units=run_ib(a.month)
     try:cpa,issues=cpa_rows(a.month);units.update({"CPA/"+s:{"status":"PASS"} for s in SALES[:3]})
     except Exception as e:cpa=[];issues=[{"classification":"SOURCE_FAIL","source":"CPA","reason":str(e)}];units.update({"CPA/"+s:{"status":"FAIL","reason":str(e)} for s in SALES[:3]})
+    if a.apply and any(unit["status"]=="FAIL" for unit in units.values()):
+        raise RuntimeError("refusing Lark write with failed IB or CPA source units")
     units["CPA/Elroy"]={"status":"NOT_CONFIGURED"};l=LarkTransport();existing,an=index_lark(lark_records(l,TABLE),a.month)
-    if any(x["classification"]=="DUPLICATE_KEY" for x in an):raise RuntimeError("duplicate Lark business key")
+    if any(x["classification"] in {"DUPLICATE_KEY","INVALID_KEY"} for x in an):raise RuntimeError("invalid or duplicate Lark business key")
     preview=classify(ib+cpa,existing);actions=[x for x in preview if x["classification"] in {"CREATE","UPDATE"}]
+    if a.apply and any(x["classification"]=="INVALID_KEY" for x in preview+issues):
+        raise RuntimeError("refusing Lark write with invalid source key or metrics")
     failed_sales={name.split("/",1)[1] for name,unit in units.items() if name.startswith("IB/") and unit["status"]=="FAIL"}
     protected={k:json.dumps(record["fields"],ensure_ascii=False,sort_keys=True) for k,record in existing.items() if (k[1] in failed_sales and k[2]=="IB") or any(key(row)==k for row in preview if row.get("classification")=="SKIPPED_NO_MONTHLY_DATA")}
     result={"mode":"APPLY" if a.apply else "PREVIEW","larkWrite":a.apply,"units":units,"totals":dict(Counter(x["classification"] for x in preview)),"anomalies":an+issues}

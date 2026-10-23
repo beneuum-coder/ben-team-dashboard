@@ -27,6 +27,7 @@ jobs:
         run: pip install requests pyotp
       - name: Sync verified X5 MTD Gross to Lark
         env:
+          CRM_COOKIE_FILE: ${{ runner.temp }}/x5-crm-session.cookie
           CRM_USER: ${{ secrets.CRM_USER }}
           CRM_PASS: ${{ secrets.CRM_PASS }}
           CRM_TOTP: ${{ secrets.CRM_TOTP }}
@@ -36,6 +37,7 @@ jobs:
         run: python scripts/sync_x5_daily_gross.py --mode current --apply --dashboard-export "$RUNNER_TEMP/x5-dashboard-export.json"
       - name: Sync verified X5 monthly IB and CPA channels to Lark
         env:
+          CRM_COOKIE_FILE: ${{ runner.temp }}/x5-crm-session.cookie
           CRM_USER: ${{ secrets.CRM_USER }}
           CRM_PASS: ${{ secrets.CRM_PASS }}
           CRM_TOTP: ${{ secrets.CRM_TOTP }}

@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import os
+import stat
 import sys
 import time
 from collections import defaultdict
@@ -28,6 +29,14 @@ BEN_UID, BEN_ORG = "964492", "73"
 
 def crm_login():
     cookie = os.environ.get("CRM_COOKIE", "").removeprefix("Cookie:").strip()
+    cookie_file = os.environ.get("CRM_COOKIE_FILE", "").strip()
+    if not cookie and cookie_file and os.path.exists(cookie_file):
+        file_stat = os.stat(cookie_file, follow_symlinks=False)
+        if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_mode & 0o077:
+            raise RuntimeError("CRM session file must be a private regular file")
+        cookie = Path(cookie_file).read_text(encoding="utf-8").strip()
+        if not cookie:
+            raise RuntimeError("CRM session file is empty")
     if cookie:
         return {"Cookie": cookie, "Content-Type": "application/json", "current-regulator": "SVG", "X-Requested-With": "XMLHttpRequest"}
     session = requests.Session()
@@ -37,7 +46,16 @@ def crm_login():
     response = session.post("https://admin.ultimarkets.com/login/to_login", data={"userName_login": os.environ["CRM_USER"], "password_login": password, "twoFactorType": "googleAuth", "googleAuthTotp": pyotp.TOTP(os.environ["CRM_TOTP"]).now()}, timeout=15, allow_redirects=False)
     if response.status_code != 302:
         raise RuntimeError(f"CRM credential login failed (status {response.status_code})")
-    return {"Cookie": f"JSESSIONID={session.cookies.get('JSESSIONID', '')}; jsId={session.cookies.get('jsId', '')}", "Content-Type": "application/json", "current-regulator": "SVG", "X-Requested-With": "XMLHttpRequest"}
+    session_id = session.cookies.get("JSESSIONID")
+    js_id = session.cookies.get("jsId")
+    if not session_id or not js_id:
+        raise RuntimeError("CRM login did not return both session cookies")
+    cookie = f"JSESSIONID={session_id}; jsId={js_id}"
+    if cookie_file:
+        fd = os.open(cookie_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(cookie)
+    return {"Cookie": cookie, "Content-Type": "application/json", "current-regulator": "SVG", "X-Requested-With": "XMLHttpRequest"}
 
 
 def post(headers, path, payload, timeout=120):
