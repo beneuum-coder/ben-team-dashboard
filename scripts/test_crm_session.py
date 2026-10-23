@@ -34,6 +34,14 @@ class CrmSessionTests(unittest.TestCase):
             self.assertEqual(crm_login()["Cookie"], "direct-cookie")
             session.assert_not_called()
 
+    def test_cloudflare_challenge_stops_before_credentials(self):
+        session = Mock()
+        session.get.return_value = Mock(status_code=403, headers={"cf-mitigated": "challenge"})
+        with patch.dict(os.environ, {}, clear=True), patch("sync_x5_daily_gross.requests.Session", return_value=session):
+            with self.assertRaisesRegex(RuntimeError, "Cloudflare security challenge"):
+                crm_login()
+        session.post.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

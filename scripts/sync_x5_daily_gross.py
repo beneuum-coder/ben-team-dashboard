@@ -40,10 +40,21 @@ def crm_login():
     if cookie:
         return {"Cookie": cookie, "Content-Type": "application/json", "current-regulator": "SVG", "X-Requested-With": "XMLHttpRequest"}
     session = requests.Session()
-    session.get("https://admin.ultimarkets.com/login/to_login", timeout=15)
+    landing = session.get("https://admin.ultimarkets.com/login/to_login", timeout=15, stream=True)
+    try:
+        if landing.status_code == 403 and landing.headers.get("cf-mitigated") == "challenge":
+            raise RuntimeError("CRM Cloudflare security challenge blocked automated access")
+        landing.raise_for_status()
+    finally:
+        landing.close()
     password = hashlib.md5(os.environ["CRM_PASS"].encode()).hexdigest()
-    session.post("https://admin.ultimarkets.com/login/to_login", data={"userName_login": os.environ["CRM_USER"], "password_login": password, "utc": "28800000"}, timeout=15, allow_redirects=False)
+    first_factor = session.post("https://admin.ultimarkets.com/login/to_login", data={"userName_login": os.environ["CRM_USER"], "password_login": password, "utc": "28800000"}, timeout=15, allow_redirects=False)
+    if first_factor.status_code == 403 and first_factor.headers.get("cf-mitigated") == "challenge":
+        raise RuntimeError("CRM Cloudflare security challenge blocked automated access")
+    first_factor.raise_for_status()
     response = session.post("https://admin.ultimarkets.com/login/to_login", data={"userName_login": os.environ["CRM_USER"], "password_login": password, "twoFactorType": "googleAuth", "googleAuthTotp": pyotp.TOTP(os.environ["CRM_TOTP"]).now()}, timeout=15, allow_redirects=False)
+    if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
+        raise RuntimeError("CRM Cloudflare security challenge blocked automated access")
     if response.status_code != 302:
         raise RuntimeError(f"CRM credential login failed (status {response.status_code})")
     session_id = session.cookies.get("JSESSIONID")
