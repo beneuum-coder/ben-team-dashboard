@@ -22,7 +22,7 @@ def sales_nodes(headers, sales_id):
     while True:
         body = {"skipCount": False, "pagination": {"limit": 200, "pageNo": page, "offset": (page - 1) * 200, "order": "asc", "sort": ""},
                 "parameters": {"directLevel": {"filterType": "CUSTOM", "input": "5"}, "user_id": {"filterType": "CUSTOM", "input": sales_id}}}
-        result = post(headers, "/user/query_userList", body, 90)
+        result = post(headers, "/user/query_userList", body, 180)
         batch = result.get("rows", []); rows.extend(batch)
         if len(batch) < 200 or len(rows) >= int(result.get("total", 0)):
             return rows

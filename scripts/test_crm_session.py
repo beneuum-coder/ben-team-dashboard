@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from sync_x5_daily_gross import crm_login
+from requests.exceptions import ReadTimeout
+from sync_x5_daily_gross import crm_login, post
 
 
 class CrmSessionTests(unittest.TestCase):
@@ -41,6 +42,24 @@ class CrmSessionTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "Cloudflare security challenge"):
                 crm_login()
         session.post.assert_not_called()
+
+    def test_read_only_query_retries_one_timeout(self):
+        success = Mock(status_code=200, headers={})
+        success.json.return_value = {"rows": []}
+        with patch("sync_x5_daily_gross.requests.post", side_effect=[ReadTimeout(), success]) as request, \
+             patch("sync_x5_daily_gross.time.sleep") as sleep:
+            self.assertEqual(post({}, "/user/query_userList", {}, 180), {"rows": []})
+            self.assertEqual(request.call_count, 2)
+            sleep.assert_called_once_with(3)
+
+    def test_read_only_query_never_retries_security_challenge(self):
+        challenge = Mock(status_code=403, headers={"cf-mitigated": "challenge"})
+        with patch("sync_x5_daily_gross.requests.post", return_value=challenge) as request, \
+             patch("sync_x5_daily_gross.time.sleep") as sleep:
+            with self.assertRaisesRegex(RuntimeError, "Cloudflare security challenge"):
+                post({}, "/user/query_userList", {}, 180)
+            request.assert_called_once()
+            sleep.assert_not_called()
 
 
 if __name__ == "__main__":

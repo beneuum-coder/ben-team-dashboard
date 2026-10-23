@@ -70,9 +70,25 @@ def crm_login():
 
 
 def post(headers, path, payload, timeout=120):
-    response = requests.post(f"https://admin.ultimarkets.com{path}", headers=headers, json=payload, timeout=timeout)
-    response.raise_for_status()
-    return response.json()
+    # These CRM POST endpoints are read-only queries. Retry a transient timeout
+    # once, but never retry an authorization failure or a security challenge.
+    for attempt in range(2):
+        try:
+            response = requests.post(f"https://admin.ultimarkets.com{path}", headers=headers, json=payload, timeout=timeout)
+            if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
+                raise RuntimeError("CRM Cloudflare security challenge blocked automated access")
+            if response.status_code in (408, 429, 502, 503, 504) and attempt == 0:
+                response.close()
+                print(f"CRM read retry path={path} reason=HTTP {response.status_code}", file=sys.stderr, flush=True)
+                time.sleep(3)
+                continue
+            response.raise_for_status()
+            return response.json()
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            if attempt:
+                raise
+            print(f"CRM read retry path={path} reason={type(exc).__name__}", file=sys.stderr, flush=True)
+            time.sleep(3)
 
 
 def team_members(headers):

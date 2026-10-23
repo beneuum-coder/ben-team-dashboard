@@ -23,7 +23,7 @@ def all_ben_nodes(headers):
     while True:
         payload = {"skipCount": False, "pagination": {"limit": 200, "pageNo": page, "offset": (page - 1) * 200, "order": "asc", "sort": ""},
                    "parameters": {"directLevel": {"filterType": "CUSTOM", "input": "5"}, "user_id": {"filterType": "CUSTOM", "input": BEN_UID}}}
-        result = post(headers, "/user/query_userList", payload, 60)
+        result = post(headers, "/user/query_userList", payload, 180)
         batch = result.get("rows", [])
         rows.extend(batch)
         if len(batch) < 200 or len(rows) >= int(result.get("total", 0)):
