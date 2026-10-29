@@ -19,19 +19,17 @@ TEAM_MANAGEMENT = "tblorZ8JzhmicRfB"
 TEAM_SUMMARY = "tblUn0uqcKU7KOVF"
 X5_DAILY = "tbl9L956hdRmwd2g"
 X5_CHANNEL_MONTHLY = "tblOJxbrBo7zs997"
-PEOPLE = ("Rita", "Kelly", "Elroy", "Lulu", "Ben")
+PEOPLE = ("Rita", "Kelly", "Elroy", "Ben")
 X5_NAMES = ("Rita", "Ben", "Kelly", "Elroy")
 CUSTOMER_TABLES = {
     "Rita": "tblEs42D58J01UiP",
     "Kelly": "tblZQ5wUp9Ye5PoP",
     "Elroy": "tblpvf9wfb8q7Cnc",
-    "Lulu": "tbloccPrqyZi8X7U",
 }
 SCHEDULE_TABLES = {
     "Rita": "tblFMjutPvKZr9Cd",
     "Kelly": "tblkPqJAdmP4GR2b",
     "Elroy": "tbl9mg6KjNlD3VDS",
-    "Lulu": "tblUIGtewqUilEsf",
 }
 SHANGHAI = timezone(timedelta(hours=8))
 
