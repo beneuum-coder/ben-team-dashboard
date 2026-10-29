@@ -7,11 +7,12 @@ from pathlib import Path
 import requests
 from sync_x5_daily_gross import LarkTransport, cx_date, lark_records, text_value
 
-TABLE="tblOJxbrBo7zs997"; SUMMARY_TABLE="tblUn0uqcKU7KOVF"; TZ=timezone(timedelta(hours=8))
+TABLE="tblOJxbrBo7zs997"; SUMMARY_TABLE="tblUn0uqcKU7KOVF"; DAILY_TABLE="tbl9L956hdRmwd2g"; TZ=timezone(timedelta(hours=8))
 METRICS=("registration","ftd","gross","withdrawal","net")
 FIELDS={"registration":"Registration","ftd":"FTD","gross":"Gross Deposit","withdrawal":"Withdrawal","net":"Net"}
 CPA_MANAGERS={"BenEu":"Ben","RitaEU":"Rita","KellyLin":"Kelly"}
 SALES=("Ben","Rita","Kelly","Elroy")
+UPDATED_AT="数据最新更新时间"
 _LAST_AFFILIATES=None
 
 def num(v):
@@ -84,19 +85,40 @@ def ensure_summary_rows(l,target,names):
         still=[name for name in missing if name not in existing]
         if still:raise RuntimeError(f"could not create 团队数据汇总 rows for {target}: {still}")
     return existing,missing
-def summary_cpa_write(l,counts,target):
+def monthly_totals(l,target):
+    """Latest MTD row of each salesperson in the X5 daily table for `target` month."""
+    latest={}
+    for record in lark_records(l,DAILY_TABLE):
+        f=record.get("fields",{})
+        name=text_value(f.get("销售")).strip()
+        if name not in (*SALES,"Total"):continue
+        if month(f.get("日期"))!=target:continue
+        if name not in latest or (f.get("日期") or 0)>(latest[name].get("日期") or 0):latest[name]=f
+    return {name:{"monthlyGross":num(f.get("入金(USD)")) or 0.0,"monthlyNet":num(f.get("净入金(USD)")) or 0.0,
+                  "master":int(num(f.get("Master IB")) or 0),"sub":int(num(f.get("Sub IB")) or 0)}
+            for name,f in latest.items()}
+def summary_cpa_write(l,counts,target,totals=None):
     """Write the monthly CPA count back and prove the values landed."""
     existing,created=ensure_summary_rows(l,target,sorted(counts))
+    now_ms=int(datetime.now(timezone.utc).timestamp()*1000)
     actions=[]
     for name in sorted(counts):
         record=existing.get(name)
         if record is None:raise RuntimeError(f"团队数据汇总 is missing {target} row for {name}")
-        if num(record["fields"].get("CPA"))!=float(counts[name]):actions.append({"record_id":record["record_id"],"fields":{"CPA":counts[name]},"sales":name})
+        values={"CPA":counts[name]}
+        owner=(totals or {}).get(name)
+        if owner:
+            values.update({"Monthly Gross":owner["monthlyGross"],"Monthly Net":owner["monthlyNet"],
+                           "Master IB":owner["master"],"Sub IB":owner["sub"]})
+        changed={field:value for field,value in values.items() if num(record["fields"].get(field))!=num(value)}
+        if changed:
+            changed[UPDATED_AT]=now_ms
+            actions.append({"record_id":record["record_id"],"fields":changed,"sales":name})
     if actions:
         l.request("POST",f"/bitable/v1/apps/{l.app}/tables/{SUMMARY_TABLE}/records/batch_update",{"records":[{"record_id":a["record_id"],"fields":a["fields"]} for a in actions]})
     after=summary_rows(l,target)
-    mismatched=[a["sales"] for a in actions if after.get(a["sales"]) is None or num(after[a["sales"]]["fields"].get("CPA"))!=float(a["fields"]["CPA"])]
-    if mismatched:raise RuntimeError(f"summary CPA read-back mismatch: {mismatched}")
+    mismatched=[a["sales"] for a in actions if after.get(a["sales"]) is None or any(num(after[a["sales"]]["fields"].get(field))!=num(value) for field,value in a["fields"].items() if field!=UPDATED_AT)]
+    if mismatched:raise RuntimeError(f"summary read-back mismatch: {mismatched}")
     return {"counts":counts,"updated":[a["sales"] for a in actions],"created":created}
 def cpa_rows(target,h=None,aff=None):
     global _LAST_AFFILIATES
@@ -146,7 +168,7 @@ def main():
     except Exception as e:counts,unmapped=None,None;cpa=[];issues=[{"classification":"SOURCE_FAIL","source":"CPA","reason":str(e)}];units.update({"CPA/"+s:{"status":"FAIL","reason":str(e)} for s in SALES[:3]})
     if a.apply and any(unit["status"]=="FAIL" for unit in units.values()):
         raise RuntimeError("refusing Lark write with failed IB or CPA source units")
-    units["CPA/Elroy"]={"status":"NOT_CONFIGURED"};l=LarkTransport();existing,an=index_lark(lark_records(l,TABLE),a.month)
+    units["CPA/Elroy"]={"status":"NOT_CONFIGURED"};l=LarkTransport();totals=monthly_totals(l,a.month);existing,an=index_lark(lark_records(l,TABLE),a.month)
     if any(x["classification"] in {"DUPLICATE_KEY","INVALID_KEY"} for x in an):raise RuntimeError("invalid or duplicate Lark business key")
     preview=classify(ib+cpa,existing);actions=[x for x in preview if x["classification"] in {"CREATE","UPDATE"}]
     if a.apply and any(x["classification"]=="INVALID_KEY" for x in preview+issues):
@@ -169,6 +191,6 @@ def main():
         if any(x["classification"]=="DUPLICATE_KEY" for x in check) or any(key(x) not in after or metrics(after[key(x)]["fields"])!={m:x[m] for m in METRICS} for x in actions):raise RuntimeError("read-back failed")
         if any(k not in after or json.dumps(after[k]["fields"],ensure_ascii=False,sort_keys=True)!=before for k,before in protected.items()):raise RuntimeError("read-back changed a skipped or failed-unit record")
         result["readBack"]={"businessKeyUnique":True,"actionsVerified":len(actions),"skippedAndFailedRecordsPreserved":len(protected)}
-        if counts is not None:result["summaryCpa"]=summary_cpa_write(l,counts,a.month)
+        if counts is not None:result["summaryWrite"]=summary_cpa_write(l,counts,a.month,totals)
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__":main()

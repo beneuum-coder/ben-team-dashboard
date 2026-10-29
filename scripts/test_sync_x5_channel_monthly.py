@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from sync_x5_channel_monthly import classify, cpa_counts, cpa_rows, index_lark, key, main, run_ib, summary_cpa_write
+from sync_x5_channel_monthly import classify, cpa_counts, cpa_rows, index_lark, key, main, monthly_totals, run_ib, summary_cpa_write
 
 
 class MonthlyChannelPreviewTests(unittest.TestCase):
@@ -128,6 +128,44 @@ class MonthlyChannelPreviewTests(unittest.TestCase):
         self.assertEqual(result["updated"], ["Kelly", "Total"])
         self.assertEqual(result["created"], [])
         self.assertEqual({row["record_id"] for row in written[0]["records"]}, {"r-Kelly", "r-Total"})
+
+    def test_monthly_totals_take_latest_day_per_sales_this_month(self):
+        first, latest, previous = 1790784000000, 1790870400000, 1788192000000
+        rows = [
+            {"record_id": "a", "fields": {"销售": "Rita", "日期": first, "入金(USD)": "100", "净入金(USD)": "90", "Master IB": "1", "Sub IB": "0"}},
+            {"record_id": "b", "fields": {"销售": "Rita", "日期": latest, "入金(USD)": "250", "净入金(USD)": "200", "Master IB": "2", "Sub IB": "1"}},
+            {"record_id": "c", "fields": {"销售": "Total", "日期": latest, "入金(USD)": "250", "净入金(USD)": "200", "Master IB": "2", "Sub IB": "1"}},
+            {"record_id": "d", "fields": {"销售": "Ben", "日期": previous, "入金(USD)": "999", "净入金(USD)": "999", "Master IB": "9", "Sub IB": "9"}},
+        ]
+        with patch("sync_x5_channel_monthly.lark_records", return_value=rows):
+            totals = monthly_totals(Mock(app="app"), "2026-10")
+        self.assertEqual(sorted(totals), ["Rita", "Total"])
+        self.assertEqual(totals["Rita"], {"monthlyGross": 250.0, "monthlyNet": 200.0, "master": 2, "sub": 1})
+
+    def test_summary_write_also_stores_mtd_totals_and_timestamp(self):
+        month_ms = 1790784000000
+        names = ("Ben", "Rita", "Kelly", "Elroy", "Total")
+        before = [{"record_id": f"r-{name}", "fields": {"销售": name, "月份": month_ms, "CPA": 0}} for name in names]
+        after = []
+        for row in before:
+            fields = dict(row["fields"])
+            if fields["销售"] in {"Kelly", "Total"}:
+                fields["CPA"] = 5
+            if fields["销售"] == "Kelly":
+                fields.update({"Monthly Gross": 23662.95, "Monthly Net": 22788.32, "Master IB": 0, "Sub IB": 0})
+            after.append({"record_id": row["record_id"], "fields": fields})
+        written = []
+        lark = Mock(); lark.app = "app"
+        lark.request.side_effect = lambda method, path, body=None: written.append(body) or {"data": {}}
+        totals = {"Kelly": {"monthlyGross": 23662.95, "monthlyNet": 22788.32, "master": 0, "sub": 0}}
+        with patch("sync_x5_channel_monthly.lark_records", side_effect=[before, after]):
+            result = summary_cpa_write(lark, {"Ben": 0, "Rita": 0, "Kelly": 5, "Elroy": 0, "Total": 5}, "2026-10", totals)
+        self.assertEqual(result["updated"], ["Kelly", "Total"])
+        payload = {row["record_id"]: row["fields"] for row in written[0]["records"]}
+        self.assertEqual(payload["r-Kelly"]["Monthly Gross"], 23662.95)
+        self.assertEqual(payload["r-Kelly"]["Monthly Net"], 22788.32)
+        self.assertIn("数据最新更新时间", payload["r-Kelly"])
+        self.assertEqual(set(payload["r-Total"]), {"CPA", "数据最新更新时间"})
 
     def test_summary_cpa_write_creates_missing_month_rows_first(self):
         month_ms = 1790784000000
