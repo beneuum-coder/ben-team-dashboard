@@ -3,8 +3,10 @@
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import time
+import types
 import unittest
 from pathlib import Path
 
@@ -155,6 +157,81 @@ class StatusFileTests(unittest.TestCase):
         self.assertIn("df820c8", text)
         self.assertIn("| e1 |", text)
         self.assertIn("状态：**idle**", text)
+
+
+class PublishRebaseTests(unittest.TestCase):
+    """publish() must survive another window pushing while the run is working."""
+
+    def setUp(self):
+        base = Path(tempfile.mkdtemp(prefix="x5-publish-"))
+        self.addCleanup(shutil.rmtree, base, True)
+        self.remote = base / "remote.git"
+        self.work = base / "work"
+        self.git(base, "init", "--bare", "-b", "main", str(self.remote))
+        self.git(base, "init", "-b", "main", str(self.work))
+        self.git(self.work, "config", "user.name", "test")
+        self.git(self.work, "config", "user.email", "test@example.com")
+        self.git(self.work, "config", "core.autocrlf", "false")
+        self.git(self.work, "remote", "add", "origin", str(self.remote))
+        self.data = self.work / runner.DATA_FILE
+        self.html = self.work / runner.HTML_FILE
+        self.data.parent.mkdir(parents=True)
+        self.data.write_text("v1", encoding="utf-8")
+        self.html.write_text("h1", encoding="utf-8")
+        self.git(self.work, "add", ".")
+        self.git(self.work, "commit", "-m", "init")
+        self.git(self.work, "push", "-u", "origin", "main")
+        self.saved_root = runner.ROOT
+        runner.ROOT = self.work
+        self.addCleanup(self.restore)
+        self.log = tempfile.NamedTemporaryFile("w", delete=False, encoding="utf-8")
+        self.log.close()
+        self.addCleanup(os.unlink, self.log.name)
+
+    def restore(self):
+        runner.ROOT = self.saved_root
+
+    def git(self, cwd, *args):
+        result = subprocess.run(["git", *args], cwd=str(cwd), text=True,
+                                capture_output=True, errors="replace")
+        self.assertEqual(result.returncode, 0, f"git {args} failed: {result.stderr}")
+        return result
+
+    def other_window_pushes(self, name, text):
+        clone = Path(tempfile.mkdtemp(prefix="x5-other-", dir=str(self.work.parent)))
+        self.addCleanup(shutil.rmtree, clone, True)
+        self.git(self.work.parent, "clone", str(self.remote), str(clone))
+        self.git(clone, "config", "user.name", "other")
+        self.git(clone, "config", "user.email", "other@example.com")
+        path = clone / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        self.git(clone, "add", ".")
+        self.git(clone, "commit", "-m", "other window")
+        self.git(clone, "push", "origin", "HEAD:main")
+
+    def publish(self):
+        args = types.SimpleNamespace(no_push=False)
+        with open(self.log.name, "a", encoding="utf-8") as handle:
+            return runner.publish(args, runner.child_env({}), handle)
+
+    def test_unrelated_remote_commit_is_rebased_then_pushed(self):
+        self.other_window_pushes(".github/workflows/x.yml", "schedule: off\n")
+        self.data.write_text("v2", encoding="utf-8")
+        self.assertTrue(self.publish())
+        remote = self.git(self.work, "ls-remote", "origin", "refs/heads/main").stdout
+        head = self.git(self.work, "rev-parse", "HEAD").stdout.strip()
+        self.assertIn(head, remote)
+        self.assertIn("v2", self.git(self.work, "show", "HEAD:outputs/lark-dashboard-data.js").stdout)
+
+    def test_conflicting_remote_snapshot_fails_cleanly(self):
+        self.other_window_pushes(runner.DATA_FILE, "v-from-other")
+        self.data.write_text("v2", encoding="utf-8")
+        with self.assertRaises(RuntimeError):
+            self.publish()
+        # The checkout must not be left mid-rebase for the next run.
+        self.assertFalse((self.work / ".git" / "rebase-apply").exists())
+        self.assertFalse((self.work / ".git" / "rebase-merge").exists())
 
 
 if __name__ == "__main__":

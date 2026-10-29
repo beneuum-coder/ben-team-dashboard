@@ -280,8 +280,25 @@ def publish(args, env, log_file):
         return False
     git(["add", "--", DATA_FILE, HTML_FILE], env)
     git(["commit", "-m", COMMIT_MESSAGE], env)
-    git(["push", "origin", "HEAD:main"], env)
-    print("--- published and pushed", flush=True)
+    pushed = git(["push", "origin", "HEAD:main"], env, check=False)
+    if pushed.returncode == 0:
+        print("--- published and pushed", flush=True)
+        return True
+    # Another window (or a manual push) moved main while this run was working.
+    # Replay our snapshot commit onto the new base once instead of leaving the
+    # checkout diverged, which would make every later run fail the same way.
+    print("--- push rejected; rebasing the snapshot onto origin/main", flush=True)
+    git(["fetch", "origin"], env)
+    rebased = git(["rebase", "origin/main"], env, check=False)
+    if rebased.returncode != 0:
+        git(["rebase", "--abort"], env, check=False)
+        raise RuntimeError(
+            "push rejected and the snapshot conflicts with origin/main; "
+            "re-run the refresh to regenerate it on top of the latest main")
+    pushed = git(["push", "origin", "HEAD:main"], env, check=False)
+    if pushed.returncode != 0:
+        raise RuntimeError("push rejected twice; another window is publishing at the same time")
+    print("--- published and pushed (after rebase)", flush=True)
     return True
 
 
