@@ -7,11 +7,12 @@ from pathlib import Path
 import requests
 from sync_x5_daily_gross import LarkTransport, cx_date, lark_records, text_value
 
-TABLE="tblOJxbrBo7zs997"; TZ=timezone(timedelta(hours=8))
+TABLE="tblOJxbrBo7zs997"; SUMMARY_TABLE="tblUn0uqcKU7KOVF"; TZ=timezone(timedelta(hours=8))
 METRICS=("registration","ftd","gross","withdrawal","net")
 FIELDS={"registration":"Registration","ftd":"FTD","gross":"Gross Deposit","withdrawal":"Withdrawal","net":"Net"}
 CPA_MANAGERS={"BenEu":"Ben","RitaEU":"Rita","KellyLin":"Kelly"}
 SALES=("Ben","Rita","Kelly","Elroy")
+_LAST_AFFILIATES=None
 
 def num(v):
     try:return round(float(v),2)
@@ -44,11 +45,52 @@ def cx_headers():
     token=r.json().get("token")
     if not token: raise RuntimeError("CellXpert login returned no access token")
     return {"Authorization":"Bearer "+token,"admin_url":"Ultimarkets"}
-def cpa_rows(target):
-    h=cx_headers();affiliate_response=requests.get("https://adminapi.cellxpert.com/",params={"command":"browseaffiliatesjson","json":1},headers=h,timeout=60)
+def affiliates(h):
+    affiliate_response=requests.get("https://adminapi.cellxpert.com/",params={"command":"browseaffiliatesjson","json":1},headers=h,timeout=60)
     affiliate_response.raise_for_status();affiliate_data=affiliate_response.json()
     aff=affiliate_data.get("ManageAffiliatesData") if isinstance(affiliate_data,dict) else None
     if not isinstance(aff,list) or not aff:raise RuntimeError("invalid or empty CellXpert affiliate list")
+    return aff
+def cpa_counts(aff,target):
+    # Approved CPA affiliates registered in `target` month, mapped to their owner.
+    # Unmapped managers stay out of the count, matching the channel sync rule.
+    counts={s:0 for s in SALES};unmapped=Counter()
+    for a in aff:
+        if str(a.get("Status") or "").casefold()!="approved":continue
+        if str(a.get("Created") or "")[:7]!=target:continue
+        mgr=str(a.get("AffiliateManager") or "").strip()
+        if mgr not in CPA_MANAGERS:unmapped[mgr]+=1;continue
+        counts[CPA_MANAGERS[mgr]]+=1
+    counts["Total"]=sum(counts[s] for s in SALES)
+    return counts,dict(unmapped)
+def summary_rows(l,target):
+    rows={}
+    for record in lark_records(l,SUMMARY_TABLE):
+        f=record.get("fields",{})
+        if month(f.get("月份"))!=target:continue
+        name=text_value(f.get("销售")).strip()
+        if not name:continue
+        if name in rows:raise RuntimeError(f"团队数据汇总 has duplicate {target} rows for {name}")
+        rows[name]=record
+    return rows
+def summary_cpa_write(l,counts,target):
+    """Write the monthly CPA count back and prove the values landed."""
+    existing=summary_rows(l,target)
+    missing=sorted(name for name in counts if name not in existing)
+    actions=[]
+    for name in sorted(counts):
+        record=existing.get(name)
+        if record is None:continue
+        if num(record["fields"].get("CPA"))!=float(counts[name]):actions.append({"record_id":record["record_id"],"fields":{"CPA":counts[name]},"sales":name})
+    if actions:
+        l.request("POST",f"/bitable/v1/apps/{l.app}/tables/{SUMMARY_TABLE}/records/batch_update",{"records":[{"record_id":a["record_id"],"fields":a["fields"]} for a in actions]})
+    after=summary_rows(l,target)
+    mismatched=[a["sales"] for a in actions if after.get(a["sales"]) is None or num(after[a["sales"]]["fields"].get("CPA"))!=float(a["fields"]["CPA"])]
+    if mismatched:raise RuntimeError(f"summary CPA read-back mismatch: {mismatched}")
+    return {"counts":counts,"updated":[a["sales"] for a in actions],"missing":missing}
+def cpa_rows(target,h=None,aff=None):
+    global _LAST_AFFILIATES
+    h=h if h is not None else cx_headers(); aff=aff if aff is not None else affiliates(h); _LAST_AFFILIATES=aff
     report_response=requests.get("https://adminapi.cellxpert.com/",params={"command":"processreport","json":1,"Affiliate":"true","BTA":"true","startDate":cx_date(datetime.fromisoformat(target+"-01")),"endDate":cx_date(datetime.now(TZ)),"uniqueId":1},headers=h,timeout=60)
     report_response.raise_for_status();rep=report_response.json()
     if not isinstance(rep,list):raise RuntimeError("invalid CellXpert processreport")
@@ -90,8 +132,8 @@ def main():
     p=argparse.ArgumentParser();p.add_argument("--apply",action="store_true");p.add_argument("--month",default=datetime.now(TZ).strftime("%Y-%m"));a=p.parse_args()
     if a.month!=datetime.now(TZ).strftime("%Y-%m"):raise RuntimeError("current month only")
     ib,units=run_ib(a.month)
-    try:cpa,issues=cpa_rows(a.month);units.update({"CPA/"+s:{"status":"PASS"} for s in SALES[:3]})
-    except Exception as e:cpa=[];issues=[{"classification":"SOURCE_FAIL","source":"CPA","reason":str(e)}];units.update({"CPA/"+s:{"status":"FAIL","reason":str(e)} for s in SALES[:3]})
+    try:cpa,issues=cpa_rows(a.month);counts,unmapped=cpa_counts(_LAST_AFFILIATES,a.month) if _LAST_AFFILIATES else (None,None);units.update({"CPA/"+s:{"status":"PASS"} for s in SALES[:3]})
+    except Exception as e:counts,unmapped=None,None;cpa=[];issues=[{"classification":"SOURCE_FAIL","source":"CPA","reason":str(e)}];units.update({"CPA/"+s:{"status":"FAIL","reason":str(e)} for s in SALES[:3]})
     if a.apply and any(unit["status"]=="FAIL" for unit in units.values()):
         raise RuntimeError("refusing Lark write with failed IB or CPA source units")
     units["CPA/Elroy"]={"status":"NOT_CONFIGURED"};l=LarkTransport();existing,an=index_lark(lark_records(l,TABLE),a.month)
@@ -101,7 +143,7 @@ def main():
         raise RuntimeError("refusing Lark write with invalid source key or metrics")
     failed_sales={name.split("/",1)[1] for name,unit in units.items() if name.startswith("IB/") and unit["status"]=="FAIL"}
     protected={k:json.dumps(record["fields"],ensure_ascii=False,sort_keys=True) for k,record in existing.items() if (k[1] in failed_sales and k[2]=="IB") or any(key(row)==k for row in preview if row.get("classification")=="SKIPPED_NO_MONTHLY_DATA")}
-    result={"mode":"APPLY" if a.apply else "PREVIEW","larkWrite":a.apply,"units":units,"totals":dict(Counter(x["classification"] for x in preview)),"anomalies":an+issues}
+    result={"mode":"APPLY" if a.apply else "PREVIEW","larkWrite":a.apply,"units":units,"totals":dict(Counter(x["classification"] for x in preview)),"anomalies":an+issues,"monthlyCpa":{"counts":counts,"unmappedManagers":unmapped}}
     failed_ib_sales = sorted(name.split("/", 1)[1] for name, unit in units.items() if name.startswith("IB/") and unit["status"] == "FAIL")
     if a.apply and failed_ib_sales:
         result["larkWrite"] = False
@@ -117,5 +159,6 @@ def main():
         if any(x["classification"]=="DUPLICATE_KEY" for x in check) or any(key(x) not in after or metrics(after[key(x)]["fields"])!={m:x[m] for m in METRICS} for x in actions):raise RuntimeError("read-back failed")
         if any(k not in after or json.dumps(after[k]["fields"],ensure_ascii=False,sort_keys=True)!=before for k,before in protected.items()):raise RuntimeError("read-back changed a skipped or failed-unit record")
         result["readBack"]={"businessKeyUnique":True,"actionsVerified":len(actions),"skippedAndFailedRecordsPreserved":len(protected)}
+        if counts is not None:result["summaryCpa"]=summary_cpa_write(l,counts,a.month)
     print(json.dumps(result,ensure_ascii=False,indent=2))
 if __name__=="__main__":main()

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from sync_x5_channel_monthly import classify, cpa_rows, index_lark, key, main, run_ib
+from sync_x5_channel_monthly import classify, cpa_counts, cpa_rows, index_lark, key, main, run_ib, summary_cpa_write
 
 
 class MonthlyChannelPreviewTests(unittest.TestCase):
@@ -103,6 +103,31 @@ class MonthlyChannelPreviewTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "invalid source key or metrics"):
                 main()
             lark.request.assert_not_called()
+
+    def test_cpa_counts_only_approved_created_this_month_and_mapped(self):
+        affiliates = [
+            {"Status": "Approved", "Created": "2026-10-02T00:00:00Z", "AffiliateManager": "BenEu"},
+            {"Status": "Approved", "Created": "2026-10-19T00:00:00Z", "AffiliateManager": "KellyLin"},
+            {"Status": "Approved", "Created": "2026-09-30T00:00:00Z", "AffiliateManager": "KellyLin"},
+            {"Status": "Declined", "Created": "2026-10-03T00:00:00Z", "AffiliateManager": "RitaEU"},
+            {"Status": "Approved", "Created": "2026-10-04T00:00:00Z", "AffiliateManager": "LynnES"},
+        ]
+        counts, unmapped = cpa_counts(affiliates, "2026-10")
+        self.assertEqual(counts, {"Ben": 1, "Rita": 0, "Kelly": 1, "Elroy": 0, "Total": 2})
+        self.assertEqual(unmapped, {"LynnES": 1})
+
+    def test_summary_cpa_write_updates_only_changed_rows_and_reads_back(self):
+        month_ms = 1790784000000
+        before = [{"record_id": f"r-{name}", "fields": {"销售": name, "月份": month_ms, "CPA": 0}} for name in ("Ben", "Rita", "Kelly", "Elroy", "Total")]
+        after = [{"record_id": r["record_id"], "fields": {**r["fields"], "CPA": 2}} if r["fields"]["销售"] in {"Kelly", "Total"} else r for r in before]
+        written = []
+        lark = Mock(); lark.app = "app"
+        lark.request.side_effect = lambda method, path, body=None: written.append(body) or {"data": {}}
+        with patch("sync_x5_channel_monthly.lark_records", side_effect=[before, after]):
+            result = summary_cpa_write(lark, {"Ben": 0, "Rita": 0, "Kelly": 2, "Elroy": 0, "Total": 2}, "2026-10")
+        self.assertEqual(result["updated"], ["Kelly", "Total"])
+        self.assertEqual(result["missing"], [])
+        self.assertEqual({row["record_id"] for row in written[0]["records"]}, {"r-Kelly", "r-Total"})
 
 
 if __name__ == "__main__":
