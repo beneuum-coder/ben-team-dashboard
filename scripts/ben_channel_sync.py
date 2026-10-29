@@ -12,7 +12,7 @@ import os
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
-from sync_x5_daily_gross import LarkTransport, crm_login, lark_records, post, text_value
+from sync_x5_daily_gross import LarkTransport, crm_login, cx_date, lark_records, post, text_value
 
 TABLE = "tblOJxbrBo7zs997"
 BEN_ALIAS = "Ben.Eu"
@@ -182,8 +182,8 @@ def cpa_channels(aggregate_name, month):
     manager = aggregate_name.removesuffix("CPA").replace(".", "").lower()
     affiliates = cellxpert_get(headers, "browseaffiliatesjson").get("ManageAffiliatesData", [])
     approved = [row for row in affiliates if str(row.get("AffiliateManager", "")).replace(".", "").lower() == manager and str(row.get("Status", "")).lower() == "approved"]
-    start = datetime.fromisoformat(f"{month}-01").strftime("%-m/%-d/%Y")
-    end = datetime.now(SHANGHAI).strftime("%-m/%-d/%Y")
+    start = cx_date(datetime.fromisoformat(f"{month}-01"))
+    end = cx_date(datetime.now(SHANGHAI))
     report = cellxpert_get(headers, "processreport", Affiliate="true", BTA="true", startDate=start, endDate=end, uniqueId=1)
     report_by_id = {str(row.get("BTA")): row for row in report if row.get("BTA") is not None}
     channels, anomalies = [], []

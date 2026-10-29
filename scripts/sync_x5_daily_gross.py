@@ -27,12 +27,24 @@ DISPLAY = {"Rita.EU": "Rita", "Ben.Eu": "Ben", "Kelly.Lin": "Kelly", "Elroy.Chua
 BEN_UID, BEN_ORG = "964492", "73"
 
 
+def cx_date(moment):
+    """CellXpert wants M/D/YYYY without leading zeros.
+
+    The original code used ``strftime("%-m/%-d/%Y")``, which is a glibc
+    extension and raises ValueError on Windows.
+    """
+    return f"{moment.month}/{moment.day}/{moment.year}"
+
+
 def crm_login():
     cookie = os.environ.get("CRM_COOKIE", "").removeprefix("Cookie:").strip()
     cookie_file = os.environ.get("CRM_COOKIE_FILE", "").strip()
     if not cookie and cookie_file and os.path.exists(cookie_file):
         file_stat = os.stat(cookie_file, follow_symlinks=False)
-        if not stat.S_ISREG(file_stat.st_mode) or file_stat.st_mode & 0o077:
+        # Windows has no POSIX permission bits; st_mode there reports 0o666 for
+        # ordinary files, which would fail this check on every valid cookie.
+        posix = os.name == "posix"
+        if not stat.S_ISREG(file_stat.st_mode) or (posix and file_stat.st_mode & 0o077):
             raise RuntimeError("CRM session file must be a private regular file")
         cookie = Path(cookie_file).read_text(encoding="utf-8").strip()
         if not cookie:

@@ -25,6 +25,18 @@ class SameNumberTests(unittest.TestCase):
         self.assertTrue(gross.same_number(None, None))
 
 
+class CxDateTests(unittest.TestCase):
+    def test_matches_the_gnu_format_but_without_leading_zeros(self):
+        from datetime import datetime
+        self.assertEqual(gross.cx_date(datetime(2026, 6, 1)), "6/1/2026")
+        self.assertEqual(gross.cx_date(datetime(2026, 10, 29)), "10/29/2026")
+        self.assertEqual(gross.cx_date(datetime(2026, 12, 31)), "12/31/2026")
+
+    def test_has_no_zero_padding(self):
+        from datetime import datetime
+        self.assertNotIn("06", gross.cx_date(datetime(2026, 6, 9)).split("/")[0])
+
+
 class ComparedFieldsTests(unittest.TestCase):
     def test_bookkeeping_timestamp_is_not_compared(self):
         self.assertNotIn("更新时间", gross.COMPARED_FIELDS)

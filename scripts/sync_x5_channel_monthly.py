@@ -5,7 +5,7 @@ from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import requests
-from sync_x5_daily_gross import LarkTransport, lark_records, text_value
+from sync_x5_daily_gross import LarkTransport, cx_date, lark_records, text_value
 
 TABLE="tblOJxbrBo7zs997"; TZ=timezone(timedelta(hours=8))
 METRICS=("registration","ftd","gross","withdrawal","net")
@@ -49,7 +49,7 @@ def cpa_rows(target):
     affiliate_response.raise_for_status();affiliate_data=affiliate_response.json()
     aff=affiliate_data.get("ManageAffiliatesData") if isinstance(affiliate_data,dict) else None
     if not isinstance(aff,list) or not aff:raise RuntimeError("invalid or empty CellXpert affiliate list")
-    report_response=requests.get("https://adminapi.cellxpert.com/",params={"command":"processreport","json":1,"Affiliate":"true","BTA":"true","startDate":datetime.fromisoformat(target+"-01").strftime("%-m/%-d/%Y"),"endDate":datetime.now(TZ).strftime("%-m/%-d/%Y"),"uniqueId":1},headers=h,timeout=60)
+    report_response=requests.get("https://adminapi.cellxpert.com/",params={"command":"processreport","json":1,"Affiliate":"true","BTA":"true","startDate":cx_date(datetime.fromisoformat(target+"-01")),"endDate":cx_date(datetime.now(TZ)),"uniqueId":1},headers=h,timeout=60)
     report_response.raise_for_status();rep=report_response.json()
     if not isinstance(rep,list):raise RuntimeError("invalid CellXpert processreport")
     by={str(x.get("BTA")):x for x in rep if x.get("BTA") not in (None,"")};rows=[];issues=[]

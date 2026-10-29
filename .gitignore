@@ -8,3 +8,9 @@ outputs/刷新Lark数据.command
 __pycache__/
 *.py[cod]
 .venv/
+
+# Local run logs from scripts/run_refresh_all.py
+logs/
+
+# Local credentials for refresh.bat
+refresh.env
