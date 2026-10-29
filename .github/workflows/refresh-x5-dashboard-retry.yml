@@ -1,11 +1,13 @@
 name: Refresh X5 dashboard (retry)
 
 # The CRM login page sits behind a Cloudflare bot challenge that is decided per
-# source IP, and the CRM read endpoints intermittently time out. The refresh
-# workflow therefore fails randomly. A rerun gets a fresh runner with a different
-# egress IP, so retrying the whole run a few times converts a flaky pipeline into
-# a reliable one. This wrapper owns the schedule; refresh-x5-dashboard.yml keeps
-# workflow_dispatch only so the two never fire twice.
+# source IP, and the CRM read endpoints intermittently time out. A rerun gets a
+# fresh runner with a different egress IP, so retrying a few times helps.
+#
+# As of 2026-10-29 the 4-hourly schedule lives on the always-on Windows host
+# (scripts/run_refresh_all.py + Task Scheduler): fixed egress IP, punctual, and a
+# browser that can pass the challenge once. This workflow keeps workflow_dispatch
+# as the GitHub-side fallback only - two schedulers writing Lark would race.
 
 on:
   workflow_dispatch:
@@ -14,11 +16,6 @@ on:
         description: "Run even if the snapshot is still fresh"
         type: boolean
         default: false
-  schedule:
-    # Every 4 hours at :17 UTC. Shanghai delivery is 00:17 / 04:17 / 08:17 /
-    # 12:17 / 16:17 / 20:17, but GitHub dispatches scheduled runs several hours
-    # late (measured 3-21h), so the wall-clock times drift.
-    - cron: '17 */4 * * *'
 
 permissions:
   contents: read

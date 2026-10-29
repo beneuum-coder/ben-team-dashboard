@@ -1,10 +1,11 @@
 name: Calibrate X5 dashboard history
 
 on:
+  # Schedule retired 2026-10-29: the Windows host now writes the current month
+  # every 4 hours. Full-month calibration rewrites historical rows, so it stays a
+  # deliberate manual action instead of a nightly job that can race the Windows
+  # refresh.
   workflow_dispatch:
-  schedule:
-    # 23:17 Asia/Shanghai (15:17 UTC): complete current-month history calibration.
-    - cron: '17 15 * * *'
 
 permissions:
   contents: write
