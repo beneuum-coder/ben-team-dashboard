@@ -126,8 +126,25 @@ class MonthlyChannelPreviewTests(unittest.TestCase):
         with patch("sync_x5_channel_monthly.lark_records", side_effect=[before, after]):
             result = summary_cpa_write(lark, {"Ben": 0, "Rita": 0, "Kelly": 2, "Elroy": 0, "Total": 2}, "2026-10")
         self.assertEqual(result["updated"], ["Kelly", "Total"])
-        self.assertEqual(result["missing"], [])
+        self.assertEqual(result["created"], [])
         self.assertEqual({row["record_id"] for row in written[0]["records"]}, {"r-Kelly", "r-Total"})
+
+    def test_summary_cpa_write_creates_missing_month_rows_first(self):
+        month_ms = 1790784000000
+        names = ("Ben", "Rita", "Kelly", "Elroy", "Total")
+        created_rows = [{"record_id": f"new-{name}", "fields": {"销售": name, "月份": month_ms, "CPA": 0}} for name in names]
+        after = [{"record_id": r["record_id"], "fields": {**r["fields"], "CPA": 1}} if r["fields"]["销售"] in {"Kelly", "Total"} else r for r in created_rows]
+        written = []
+        lark = Mock(); lark.app = "app"
+        lark.request.side_effect = lambda method, path, body=None: written.append((path, body)) or {"data": {}}
+        with patch("sync_x5_channel_monthly.lark_records", side_effect=[[], created_rows, after]):
+            result = summary_cpa_write(lark, {"Ben": 0, "Rita": 0, "Kelly": 1, "Elroy": 0, "Total": 1}, "2026-10")
+        self.assertEqual(set(result["created"]), set(names))
+        self.assertEqual(result["updated"], ["Kelly", "Total"])
+        self.assertTrue(written[0][0].endswith("/records/batch_create"))
+        self.assertEqual({row["fields"]["销售"] for row in written[0][1]["records"]}, set(names))
+        self.assertEqual(written[0][1]["records"][0]["fields"]["月份"], month_ms)
+        self.assertTrue(written[1][0].endswith("/records/batch_update"))
 
 
 if __name__ == "__main__":

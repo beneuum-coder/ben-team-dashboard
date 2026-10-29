@@ -73,21 +73,31 @@ def summary_rows(l,target):
         if name in rows:raise RuntimeError(f"团队数据汇总 has duplicate {target} rows for {name}")
         rows[name]=record
     return rows
+def ensure_summary_rows(l,target,names):
+    """Create the current-month rows that are missing so the month can be written."""
+    existing=summary_rows(l,target)
+    missing=[name for name in names if name not in existing]
+    if missing:
+        month_ms=int(datetime.fromisoformat(target+"-01").replace(tzinfo=TZ).timestamp()*1000)
+        l.request("POST",f"/bitable/v1/apps/{l.app}/tables/{SUMMARY_TABLE}/records/batch_create",{"records":[{"fields":{"销售":name,"月份":month_ms}} for name in missing]})
+        existing=summary_rows(l,target)
+        still=[name for name in missing if name not in existing]
+        if still:raise RuntimeError(f"could not create 团队数据汇总 rows for {target}: {still}")
+    return existing,missing
 def summary_cpa_write(l,counts,target):
     """Write the monthly CPA count back and prove the values landed."""
-    existing=summary_rows(l,target)
-    missing=sorted(name for name in counts if name not in existing)
+    existing,created=ensure_summary_rows(l,target,sorted(counts))
     actions=[]
     for name in sorted(counts):
         record=existing.get(name)
-        if record is None:continue
+        if record is None:raise RuntimeError(f"团队数据汇总 is missing {target} row for {name}")
         if num(record["fields"].get("CPA"))!=float(counts[name]):actions.append({"record_id":record["record_id"],"fields":{"CPA":counts[name]},"sales":name})
     if actions:
         l.request("POST",f"/bitable/v1/apps/{l.app}/tables/{SUMMARY_TABLE}/records/batch_update",{"records":[{"record_id":a["record_id"],"fields":a["fields"]} for a in actions]})
     after=summary_rows(l,target)
     mismatched=[a["sales"] for a in actions if after.get(a["sales"]) is None or num(after[a["sales"]]["fields"].get("CPA"))!=float(a["fields"]["CPA"])]
     if mismatched:raise RuntimeError(f"summary CPA read-back mismatch: {mismatched}")
-    return {"counts":counts,"updated":[a["sales"] for a in actions],"missing":missing}
+    return {"counts":counts,"updated":[a["sales"] for a in actions],"created":created}
 def cpa_rows(target,h=None,aff=None):
     global _LAST_AFFILIATES
     h=h if h is not None else cx_headers(); aff=aff if aff is not None else affiliates(h); _LAST_AFFILIATES=aff
