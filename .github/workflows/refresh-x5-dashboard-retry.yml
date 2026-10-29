@@ -11,15 +11,14 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: "Run even if today's snapshot is already published"
+        description: "Run even if the snapshot is still fresh"
         type: boolean
         default: false
   schedule:
-    # 09:17 Asia/Shanghai (UTC+8) - primary
-    - cron: '17 1 * * *'
-    # 17:17 Asia/Shanghai - safety net if the primary slot never fires.
-    # No-op when today's snapshot is already published (guard below).
-    - cron: '17 9 * * *'
+    # Every 4 hours at :17 UTC. Shanghai delivery is 00:17 / 04:17 / 08:17 /
+    # 12:17 / 16:17 / 20:17, but GitHub dispatches scheduled runs several hours
+    # late (measured 3-21h), so the wall-clock times drift.
+    - cron: '17 */4 * * *'
 
 permissions:
   contents: read
@@ -38,21 +37,32 @@ jobs:
         with:
           ref: main
 
-      - name: Skip when today's snapshot is already published
+      - name: Skip when the snapshot is still fresh
         id: guard
         run: |
+          # Scheduled runs can be delivered hours late and then queue up behind
+          # each other, so "already refreshed today" is too coarse: a 4-hourly
+          # cadence needs a freshness check instead.
+          MAX_AGE_MIN=210
           if [ "${{ inputs.force }}" = "true" ]; then
-            echo "force input set; running even if today's snapshot exists."
+            echo "force input set; running regardless of snapshot age."
             echo "skip=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           gen=$(grep -o '"generatedAt":"[^"]*"' outputs/lark-dashboard-data.js | head -1 | cut -d'"' -f4)
-          today=$(TZ=Asia/Shanghai date +%F)
-          if [ -n "$gen" ] && [ "$(TZ=Asia/Shanghai date -d "$gen" +%F)" = "$today" ]; then
-            echo "Snapshot from $gen is already today ($today); nothing to do."
+          gen_epoch=$(date -d "$gen" +%s 2>/dev/null || echo 0)
+          now_epoch=$(date -u +%s)
+          if [ "$gen_epoch" -gt 0 ]; then
+            age_min=$(( (now_epoch - gen_epoch) / 60 ))
+          else
+            age_min=999999
+          fi
+          echo "Snapshot: ${gen:-unknown} | age: ${age_min} min | threshold: ${MAX_AGE_MIN} min"
+          if [ "$age_min" -lt "$MAX_AGE_MIN" ]; then
+            echo "Snapshot is still fresh (${age_min} min old); nothing to do."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Latest snapshot: ${gen:-unknown}; target date: $today"
+            echo "Snapshot is stale (${age_min} min old); refreshing."
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
