@@ -211,6 +211,18 @@ def write_plan(lark, creates, updates):
             lark.request("POST", f"/bitable/v1/apps/{lark.app}/tables/{TABLE}/records/{action}", {"records": records[index:index + 100]})
 
 
+# Only these fields carry data. 更新时间 is bookkeeping: rewriting it on every
+# run is what turned a no-op refresh into a Lark write.
+COMPARED_FIELDS = ("入金(USD)", "出金(USD)", "净入金(USD)", "Master IB", "Sub IB")
+
+
+def same_number(left, right):
+    try:
+        return round(float(left), 2) == round(float(right), 2)
+    except (TypeError, ValueError):
+        return left == right
+
+
 def date_key(value):
     if not value:
         return ""
@@ -300,7 +312,7 @@ def main():
         all_days.append(cursor)
         cursor += timedelta(days=1)
     cumulative = {name: {"master": 0, "sub": 0} for name in SALES}
-    creates, updates = [], []
+    creates, updates, unchanged = [], [], 0
     total_requests = len(SALES) * (1 if args.mode == "current" else len(all_days))
     completed_requests = 0
     print(f"mode={args.mode} phase=CRM MTD statistics requests=0/{total_requests}", flush=True)
@@ -332,12 +344,22 @@ def main():
                 gross, withdraw, net, counts = *values[name], cumulative[name]
             fields = {"销售": DISPLAY.get(name, name), "日期": int(datetime.combine(day, datetime.min.time(), MSK).timestamp() * 1000), "入金(USD)": gross, "出金(USD)": withdraw, "净入金(USD)": net, "Master IB": counts["master"], "Sub IB": counts["sub"], "更新时间": int(time.time() * 1000)}
             record = existing.get((fields["销售"], day_s))
-            (updates if record else creates).append({"record_id": record["record_id"], "fields": fields} if record else {"fields": fields})
-    print(json.dumps({"create": len(creates), "update": len(updates), "delete": 0}, ensure_ascii=False))
+            if not record:
+                creates.append({"fields": fields})
+                continue
+            current = record.get("fields", {})
+            if all(same_number(current.get(key), fields[key]) for key in COMPARED_FIELDS):
+                unchanged += 1
+                continue
+            updates.append({"record_id": record["record_id"], "fields": fields})
+    print(json.dumps({"create": len(creates), "update": len(updates), "unchanged": unchanged, "delete": 0}, ensure_ascii=False))
     if not args.apply:
         return
-    print("phase=Lark snapshot write", flush=True)
-    write_plan(lark, creates, updates)
+    if creates or updates:
+        print("phase=Lark snapshot write", flush=True)
+        write_plan(lark, creates, updates)
+    else:
+        print("phase=Lark snapshot write skipped: every row is already current", flush=True)
     if args.dashboard_export:
         print("phase=Lark snapshot read-back and dashboard export", flush=True)
         export_after_readback(lark, today, args.dashboard_export)
