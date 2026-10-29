@@ -3,3 +3,8 @@ work/
 
 # Local-only data refresh utility; GitHub Pages does not use it.
 outputs/刷新Lark数据.command
+
+# Python bytecode and local virtualenv
+__pycache__/
+*.py[cod]
+.venv/

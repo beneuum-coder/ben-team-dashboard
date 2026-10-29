@@ -96,7 +96,10 @@ def individual_rows(headers, affiliate_id):
 def customers_for_subtree(headers, nodes):
     accounts = set().union(*(account_ids(node) for node in nodes))
     rows_by_uid, duplicate_uids = {}, set()
-    with ThreadPoolExecutor(max_workers=100) as executor:
+    # Each worker issues a heavy "all customers of one affiliate" query. At 100
+    # workers this saturated the CRM origin and produced 524s / read timeouts;
+    # 12 matches the team-side fan-out and keeps a single run inside its budget.
+    with ThreadPoolExecutor(max_workers=12) as executor:
         futures = {executor.submit(individual_rows, headers, account): account for account in accounts}
         for future in as_completed(futures):
             account = futures[future]

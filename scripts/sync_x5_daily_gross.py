@@ -69,26 +69,33 @@ def crm_login():
     return {"Cookie": cookie, "Content-Type": "application/json", "current-regulator": "SVG", "X-Requested-With": "XMLHttpRequest"}
 
 
+RETRY_DELAYS = (3, 10, 20)
+RETRYABLE_STATUS = {408, 425, 429, 502, 503, 504, 520, 522, 524}
+
+
 def post(headers, path, payload, timeout=120):
-    # These CRM POST endpoints are read-only queries. Retry a transient timeout
-    # once, but never retry an authorization failure or a security challenge.
-    for attempt in range(2):
+    # These CRM POST endpoints are read-only queries. Retry transient timeouts and
+    # Cloudflare edge errors (520/522/524) with backoff, but never retry an
+    # authorization failure or a security challenge.
+    for attempt in range(len(RETRY_DELAYS) + 1):
+        delay = RETRY_DELAYS[attempt] if attempt < len(RETRY_DELAYS) else None
         try:
             response = requests.post(f"https://admin.ultimarkets.com{path}", headers=headers, json=payload, timeout=timeout)
             if response.status_code == 403 and response.headers.get("cf-mitigated") == "challenge":
                 raise RuntimeError("CRM Cloudflare security challenge blocked automated access")
-            if response.status_code in (408, 429, 502, 503, 504) and attempt == 0:
+            if response.status_code in RETRYABLE_STATUS and delay is not None:
                 response.close()
                 print(f"CRM read retry path={path} reason=HTTP {response.status_code}", file=sys.stderr, flush=True)
-                time.sleep(3)
+                time.sleep(delay)
                 continue
             response.raise_for_status()
             return response.json()
         except (requests.Timeout, requests.ConnectionError) as exc:
-            if attempt:
+            if delay is None:
                 raise
             print(f"CRM read retry path={path} reason={type(exc).__name__}", file=sys.stderr, flush=True)
-            time.sleep(3)
+            time.sleep(delay)
+    raise RuntimeError(f"CRM read failed after {len(RETRY_DELAYS) + 1} attempts: {path}")
 
 
 def team_members(headers):

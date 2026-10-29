@@ -1,0 +1,99 @@
+name: Refresh X5 dashboard (retry)
+
+# The CRM login page sits behind a Cloudflare bot challenge that is decided per
+# source IP, and the CRM read endpoints intermittently time out. The refresh
+# workflow therefore fails randomly. A rerun gets a fresh runner with a different
+# egress IP, so retrying the whole run a few times converts a flaky pipeline into
+# a reliable one. This wrapper owns the schedule; refresh-x5-dashboard.yml keeps
+# workflow_dispatch only so the two never fire twice.
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Run even if today's snapshot is already published"
+        type: boolean
+        default: false
+  schedule:
+    # 09:17 Asia/Shanghai (UTC+8) - primary
+    - cron: '17 1 * * *'
+    # 17:17 Asia/Shanghai - safety net if the primary slot never fires.
+    # No-op when today's snapshot is already published (guard below).
+    - cron: '17 9 * * *'
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: x5-dashboard-retry
+  cancel-in-progress: false
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Skip when today's snapshot is already published
+        id: guard
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            echo "force input set; running even if today's snapshot exists."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gen=$(grep -o '"generatedAt":"[^"]*"' outputs/lark-dashboard-data.js | head -1 | cut -d'"' -f4)
+          today=$(TZ=Asia/Shanghai date +%F)
+          if [ -n "$gen" ] && [ "$(TZ=Asia/Shanghai date -d "$gen" +%F)" = "$today" ]; then
+            echo "Snapshot from $gen is already today ($today); nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Latest snapshot: ${gen:-unknown}; target date: $today"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch refresh and retry transient failures
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          for attempt in 1 2 3 4 5; do
+            echo "::group::attempt ${attempt}"
+            before=$(gh run list --workflow=refresh-x5-dashboard.yml --limit 1 --json databaseId --jq '.[0].databaseId // 0')
+            gh workflow run refresh-x5-dashboard.yml --ref main
+            run_id=""
+            for _ in $(seq 1 30); do
+              sleep 6
+              run_id=$(gh run list --workflow=refresh-x5-dashboard.yml --limit 10 --json databaseId \
+                --jq "[.[] | select(.databaseId > $before)] | .[0].databaseId // empty" || true)
+              [ -n "$run_id" ] && break
+            done
+            if [ -z "$run_id" ]; then
+              echo "attempt ${attempt}: dispatched run never appeared; retrying"
+              echo "::endgroup::"
+              continue
+            fi
+            gh run watch "$run_id" --exit-status --interval 20 || true
+            conclusion=$(gh run view "$run_id" --json conclusion --jq '.conclusion')
+            echo "attempt ${attempt}: run ${run_id} -> ${conclusion}"
+            echo "::endgroup::"
+            if [ "$conclusion" = "success" ]; then
+              echo "Dashboard refreshed on attempt ${attempt}."
+              exit 0
+            fi
+            case "$conclusion" in
+              cancelled|skipped)
+                echo "::error::run ${run_id} ended as ${conclusion}; not retrying"
+                exit 1
+                ;;
+            esac
+            sleep 15
+          done
+          echo "::error::refresh failed on all 5 attempts; CRM or Cloudflare may be blocking every runner"
+          exit 1

@@ -1,10 +1,10 @@
 name: Refresh X5 dashboard data
 
 on:
+  # Scheduled runs are dispatched by refresh-x5-dashboard-retry.yml so a failed
+  # attempt (Cloudflare challenge or CRM timeout) can be retried on a fresh runner
+  # with a different egress IP.
   workflow_dispatch:
-  schedule:
-    # 09:17 Asia/Shanghai (UTC+8)
-    - cron: '17 1 * * *'
 
 permissions:
   contents: write
@@ -16,6 +16,7 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
