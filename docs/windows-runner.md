@@ -142,6 +142,28 @@ schtasks /Create /TN "X5 Dashboard Refresh" /TR "C:\x5\ben-team-dashboard\refres
 
 ---
 
+## 4.5 并发：锁与公共状态文件
+
+`run_refresh_all.py` 现在一次只允许跑一轮，两个窗口不会同时写 Lark / push：
+
+- 锁文件是 `work\.refresh.lock`（`work/` 已被 gitignore），内容是
+  `{"pid", "started", "phase", "log"}`。第二个实例启动会立刻退出，并打印
+  持有者的 pid、阶段和日志名。
+- 判定标准是**持有进程是否还活着**，不是文件在不在：进程被杀掉留下的锁，
+  下一次运行会自动接管，不会永久卡死。
+- 半写或损坏的锁在 2 分钟内不会被抢占（躲开写入瞬间），超过 2 分钟才当陈旧锁处理。
+- 解锁的正确姿势：确认锁里的 pid 已经不在，再删 `work\.refresh.lock`。
+
+每次运行还会维护仓库上一级的 `REFRESH-STATUS.md`（本机即 `C:\x5\REFRESH-STATUS.md`）：
+
+- 顶部“当前”区域：`running` / `idle`、pid、阶段、日志文件；
+- 下面“运行记录”表：开始、结束、结果、提交、数据时间，一轮一行，只追加。
+
+两个窗口开工前先读这个文件；状态是 `running` 就别起第二轮。想换位置可以设
+环境变量 `X5_REFRESH_STATUS`。
+
+---
+
 ## 5. 排查
 
 | 现象 | 原因 | 处理 |
