@@ -8,9 +8,9 @@ on:
         required: true
         default: false
         type: boolean
-  schedule:
-    # 13:20 Asia/Shanghai. Keep the channel table current once per day.
-    - cron: '20 5 * * *'
+  # The 4-hourly refresh-x5-dashboard-retry.yml already syncs monthly channels,
+  # so the daily schedule here only produced a duplicate write and a failure log.
+  # Kept as a manual escape hatch.
 
 permissions:
   contents: write
