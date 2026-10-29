@@ -22,7 +22,8 @@ class CrmSessionTests(unittest.TestCase):
                            "CRM_PASS": "test-password", "CRM_TOTP": "JBSWY3DPEHPK3PXP"}
             with patch.dict(os.environ, environment, clear=True), patch("sync_x5_daily_gross.requests.Session", return_value=session):
                 headers = crm_login()
-            self.assertEqual(stat.S_IMODE(cookie_file.stat().st_mode), 0o600)
+            if os.name == "posix":
+                self.assertEqual(stat.S_IMODE(cookie_file.stat().st_mode), 0o600)
             self.assertEqual(cookie_file.read_text(), headers["Cookie"])
             self.assertNotIn(environment["CRM_PASS"], cookie_file.read_text())
             child_environment = {"PATH": os.environ.get("PATH", ""), "CRM_COOKIE_FILE": str(cookie_file),
