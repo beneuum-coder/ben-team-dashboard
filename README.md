@@ -8,7 +8,7 @@
 2. 在仓库 **Settings → Pages** 中选择：
    - Branch：`main`
    - Folder：`/(root)`
-3. GitHub Pages 的入口是根目录 `index.html`，它会以相对路径打开 `outputs/团队扩编与筛选体系框架-可视化编辑版.html`。
+3. GitHub Pages 的入口是根目录 `index.html`，它会以相对路径打开 `outputs/团队业绩汇总.html`。
 
 ## 数据说明
 

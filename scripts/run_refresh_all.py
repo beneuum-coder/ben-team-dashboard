@@ -30,7 +30,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DATA_FILE = "outputs/lark-dashboard-data.js"
-HTML_FILE = "outputs/团队扩编与筛选体系框架-可视化编辑版.html"
+HTML_FILE = "outputs/团队业绩汇总.html"
 COMMIT_MESSAGE = "Refresh X5 dashboard snapshot"
 
 # One refresh at a time. The lock lives in work/ (gitignored) and carries the

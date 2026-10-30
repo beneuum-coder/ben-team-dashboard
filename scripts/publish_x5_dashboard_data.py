@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--export", required=True)
     parser.add_argument("--dashboard-export", help="Complete read-only Dashboard Lark export to publish atomically")
     parser.add_argument("--data", default="outputs/lark-dashboard-data.js")
-    parser.add_argument("--html", default="outputs/团队扩编与筛选体系框架-可视化编辑版.html")
+    parser.add_argument("--html", default="outputs/团队业绩汇总.html")
     args = parser.parse_args()
     exported = json.loads(Path(args.export).read_text(encoding="utf-8"))
     records = exported.get("records", {})
