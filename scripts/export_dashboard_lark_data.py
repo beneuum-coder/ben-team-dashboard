@@ -242,6 +242,7 @@ def main():
     export_date = str(x5_export.get("date") or "")
     if len(export_date) != 10:
         raise RuntimeError("X5 export is missing its snapshot date")
+    contributions = x5_export.get("contributions")
 
     lark = LarkTransport()
     management = load_table(lark, TEAM_MANAGEMENT, "团队管理汇总", {"销售", "入职时间"})
@@ -367,6 +368,7 @@ def main():
         "teamGrossTrend": [team_history[label] for label in sorted(team_history)],
         "teamCompletion": current_value(total_fields, "当月入金完成度"),
         "x5ChannelMonthly": x5_channel_monthly,
+        "contributions": contributions,
     }
     Path(args.output).write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"dashboard export complete people={len(people)} issues={len(issues)} customers={len(customers)}", flush=True)

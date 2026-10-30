@@ -141,6 +141,66 @@ def stats(headers, uid, org, start, end, rates):
     return round(gross, 2), round(gross - net, 2), round(net, 2)
 
 
+def _norm(value):
+    return "".join(ch for ch in str(value or "").lower() if ch.isalnum())
+
+
+def contribution_rows(headers, members, month, rates, today):
+    """Per-source MTD deposits: IB channels, one CPA bucket, and direct clients by name.
+
+    Ben's CRM account is the team director, so his client report already contains
+    every other salesperson's clients; subtract those client ids before bucketing.
+    """
+    start = f"{month}-01"
+    end = today.isoformat()
+    collected = {}
+    for name in SALES:
+        uid, org = members[name]
+        items, page = [], 1
+        while True:
+            body = {"limit": 500, "pageNo": page, "offset": (page - 1) * 500, "order": "asc",
+                    "search": {"directLevel": "3", "user_id": uid, "org_id": org, "searchType": "-1",
+                               "search": "", "agentuserQuery": "", "startDate": start, "endDate": end,
+                               "dataSourceId": "0", "dataType": "0", "accType": "1", "paymentMethod": "0",
+                               "countryCodes": ""}}
+            chunk = post(headers, "/report/view/depositAndWithdrawReports", body, 180).get("rows", [])
+            items += chunk
+            if len(chunk) < 500:
+                break
+            page += 1
+        collected[name] = items
+    claimed = set()
+    for name in SALES:
+        if name != "Ben.Eu":
+            claimed |= {str(row.get("userId")) for row in collected[name]}
+    rows = []
+    for name in SALES:
+        alias = _norm(name)
+        buckets = defaultdict(float)
+        for row in collected[name]:
+            if name == "Ben.Eu" and str(row.get("userId")) in claimed:
+                continue
+            if str(row.get("dataType")) != "1":
+                continue
+            amount = usd(row.get("depositCount"), row.get("currency", "USD"), rates)
+            if not amount:
+                continue
+            ib = str(row.get("ibName") or "").strip()
+            key = _norm(ib)
+            if key.endswith("cpa"):
+                buckets[("CPA", "CPA")] += amount
+            elif not key or key == alias or key == _norm(DISPLAY[name]):
+                buckets[("直客", str(row.get("userName") or "客户").strip())] += amount
+            else:
+                buckets[("IB", ib)] += amount
+        for (kind, label), amount in buckets.items():
+            if amount <= 0.005:
+                continue
+            rows.append({"sales": DISPLAY[name], "sourceName": label, "sourceType": kind,
+                         "sourceId": "", "gross": round(amount, 2)})
+    return rows
+
+
 def ib_by_day(headers, month):
     start = f"{month}-01 00:00:00"
     end = f"{month}-{(date.fromisoformat(month + '-01').replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1):%d} 23:59:59"
@@ -267,7 +327,7 @@ def select_day_records(records, today):
     return selected, duplicates
 
 
-def export_latest(records, today, destination):
+def export_latest(records, today, destination, contributions=None):
     selected, duplicates = select_day_records(records, today)
     expected = {*DISPLAY.values(), "Total"}
     if duplicates:
@@ -275,10 +335,13 @@ def export_latest(records, today, destination):
     if set(selected) != expected:
         raise RuntimeError(f"X5 daily Lark read-back incomplete: expected {sorted(expected)}, got {sorted(selected)}")
     updated = max(int(row.get("更新时间") or 0) for row in selected.values())
-    Path(destination).write_text(json.dumps({"date": today.isoformat(), "updatedAt": updated, "records": selected}, ensure_ascii=False), encoding="utf-8")
+    payload = {"date": today.isoformat(), "updatedAt": updated, "records": selected}
+    if contributions is not None:
+        payload["contributions"] = contributions
+    Path(destination).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def export_after_readback(lark, today, destination):
+def export_after_readback(lark, today, destination, contributions=None):
     fields = {field.get("field_name"): field.get("type") for field in lark_fields(lark)}
     print(
         f"phase=Lark read-back query date={today.isoformat()} "
@@ -295,7 +358,7 @@ def export_after_readback(lark, today, destination):
             flush=True,
         )
         if not duplicates and set(selected) == {*DISPLAY.values(), "Total"}:
-            export_latest(records, today, destination)
+            export_latest(records, today, destination, contributions)
             return
     raise RuntimeError(
         f"X5 daily Lark read-back incomplete after 5 attempts: "
@@ -374,7 +437,13 @@ def main():
         print("phase=Lark snapshot write skipped: every row is already current", flush=True)
     if args.dashboard_export:
         print("phase=Lark snapshot read-back and dashboard export", flush=True)
-        export_after_readback(lark, today, args.dashboard_export)
+        try:
+            contributions = contribution_rows(headers, members, args.month, rates, today)
+            print(f"phase=CRM contribution sources rows={len(contributions)}", flush=True)
+        except Exception as exc:
+            print(f"warning=contribution sources unavailable: {type(exc).__name__}: {exc}", flush=True)
+            contributions = None
+        export_after_readback(lark, today, args.dashboard_export, contributions)
 
 
 if __name__ == "__main__":
