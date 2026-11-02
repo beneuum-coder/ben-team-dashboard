@@ -101,7 +101,10 @@ def post(headers, path, payload, timeout=120):
                 time.sleep(delay)
                 continue
             response.raise_for_status()
-            return response.json()
+            payload = response.json()
+            if isinstance(payload, dict) and payload.get("code") == "session_timeout":
+                raise RuntimeError("CRM session expired: refresh CRM_COOKIE_FILE (run crm-login.bat) and retry")
+            return payload
         except (requests.Timeout, requests.ConnectionError) as exc:
             if delay is None:
                 raise
