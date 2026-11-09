@@ -304,21 +304,34 @@ def main():
 
     history = defaultdict(dict)
     team_history = {}
+    reports = {}
     for record in summary:
         fields = record.get("fields", {})
         name, label = text(fields.get("销售")), month_label(fields.get("月份"))
         if not name or not label:
             continue
+        master, sub, cpa = (int(number(fields.get(key))) for key in ("Master IB", "Sub IB", "CPA"))
         row = {
             "label": label,
             "lead": 0,
-            "ib": int(number(fields.get("Master IB"))) + int(number(fields.get("Sub IB"))) + int(number(fields.get("CPA"))),
+            "ib": master + sub + cpa,
             "gross": number(fields.get("Monthly Gross")),
+        }
+        report = reports.setdefault(label, {"month": label, "people": {}, "total": None})
+        detail = {
+            "name": name, "master": master, "sub": sub, "cpa": cpa,
+            "ib": master + sub + cpa,
+            "reg": number(fields.get("Registration")), "ftd": number(fields.get("FTD")),
+            "gross": number(fields.get("Monthly Gross")), "net": number(fields.get("Monthly Net")),
+            "targetGross": number(fields.get("月Gross")), "targetIB": number(fields.get("月IB/CPA数量")),
+            "completion": number(fields.get("当月入金完成度")),
         }
         if name == "Total":
             team_history[label] = {"label": label, "gross": row["gross"], "actualIB": row["ib"]}
+            report["total"] = detail
         elif name in PEOPLE:
             history[name][label] = row
+            report["people"][name] = detail
     for name, rows in schedules.items():
         month_leads = defaultdict(int)
         for row in rows:
@@ -369,6 +382,7 @@ def main():
         "teamCompletion": current_value(total_fields, "当月入金完成度"),
         "x5ChannelMonthly": x5_channel_monthly,
         "contributions": contributions,
+        "monthlyReports": [reports[label] for label in sorted(reports)],
     }
     Path(args.output).write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"dashboard export complete people={len(people)} issues={len(issues)} customers={len(customers)}", flush=True)
