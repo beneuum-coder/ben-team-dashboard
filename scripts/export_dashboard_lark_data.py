@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from sync_x5_daily_gross import DISPLAY, LarkTransport, crm_login, lark_fields, lark_records, post, select_day_records
+import income_estimate
 
 
 def reward_history(headers, months):
@@ -349,6 +350,16 @@ def main():
         elif name in PEOPLE:
             history[name][label] = row
             report["people"][name] = detail
+    estimate = None
+    try:
+        estimate = income_estimate.build()
+        if estimate.get("error"):
+            print(f"warning=income estimate unavailable: {estimate['error']}", flush=True)
+            estimate = None
+        else:
+            print(f"income estimate month={estimate['month']}", flush=True)
+    except Exception as exc:
+        print(f"warning=income estimate unavailable: {type(exc).__name__}: {exc}", flush=True)
     reward = None
     try:
         reward = reward_history(crm_login(), sorted(reports))
@@ -406,6 +417,7 @@ def main():
         "x5ChannelMonthly": x5_channel_monthly,
         "contributions": contributions,
         "monthlyReports": [reports[label] for label in sorted(reports)],
+        "incomeEstimate": estimate,
         "rewardReports": ([{"month": label, "rows": reward[label]} for label in sorted(reward)]
                           if reward else None),
     }
