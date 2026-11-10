@@ -103,6 +103,12 @@ def build(now=None):
         average = round(sum(values) / 3, 2)
         rate = tier_rate(max(average, 0))
         rows.append({"name": name, "months": values, "average": average,
-                     "rate": rate, "bonus": round(max(average, 0) * rate, 2)})
+                     "rate": rate, "bonus": round(max(average, 0) * rate, 2),
+                     "teamShare": 0.0, "total": 0.0})
+    others = sum(row["bonus"] for row in rows if row["name"] != "Ben")
+    for row in rows:
+        if row["name"] == "Ben":
+            row["teamShare"] = round(others * 0.2, 2)
+        row["total"] = round(row["bonus"] + row["teamShare"], 2)
     return {"month": current, "window": window, "rows": rows,
-            "note": "按近3月平均净入金×档位预估；财务实际结算滞后一个月且可能含调整"}
+            "note": "按近3月平均净入金×档位预估；Ben 另计团队其他三人提成的 20%；财务实际结算滞后一个月且可能含调整"}
