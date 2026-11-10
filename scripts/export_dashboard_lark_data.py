@@ -12,7 +12,24 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sync_x5_daily_gross import DISPLAY, LarkTransport, lark_fields, lark_records, select_day_records
+from sync_x5_daily_gross import DISPLAY, LarkTransport, crm_login, lark_fields, lark_records, post, select_day_records
+
+
+def reward_history(headers, months):
+    """Per-month lots and volume commission from the CRM Reward Report."""
+    from calendar import monthrange
+    out = {}
+    for month in months:
+        year, mon = (int(part) for part in month.split("-"))
+        body = {"limit": 100, "pageNo": 1, "order": "asc",
+                "search": {"directLevel": "5", "user_id": "", "org_id": "", "userQuery": "",
+                           "startDate": f"{month}-01", "endDate": f"{month}-{monthrange(year, mon)[1]:02d}",
+                           "skipCount": True}}
+        rows = post(headers, "/report/rewardListNew", body, 120).get("rows") or []
+        out[month] = [{"name": DISPLAY.get(row.get("userName"), row.get("userName")),
+                       "volume": round(float(row.get("allVolume") or 0), 2),
+                       "commission": round(float(row.get("allCommission") or 0), 2)} for row in rows]
+    return out
 
 
 TEAM_MANAGEMENT = "tblorZ8JzhmicRfB"
@@ -332,6 +349,12 @@ def main():
         elif name in PEOPLE:
             history[name][label] = row
             report["people"][name] = detail
+    reward = None
+    try:
+        reward = reward_history(crm_login(), sorted(reports))
+        print(f"reward reports: {len(reward)} months", flush=True)
+    except Exception as exc:
+        print(f"warning=reward history unavailable: {type(exc).__name__}: {exc}", flush=True)
     for name, rows in schedules.items():
         month_leads = defaultdict(int)
         for row in rows:
@@ -383,6 +406,8 @@ def main():
         "x5ChannelMonthly": x5_channel_monthly,
         "contributions": contributions,
         "monthlyReports": [reports[label] for label in sorted(reports)],
+        "rewardReports": ([{"month": label, "rows": reward[label]} for label in sorted(reward)]
+                          if reward else None),
     }
     Path(args.output).write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"dashboard export complete people={len(people)} issues={len(issues)} customers={len(customers)}", flush=True)
