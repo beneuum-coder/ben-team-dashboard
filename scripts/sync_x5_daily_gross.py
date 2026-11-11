@@ -339,6 +339,10 @@ def export_latest(records, today, destination, contributions=None):
         raise RuntimeError(f"X5 daily Lark read-back incomplete: expected {sorted(expected)}, got {sorted(selected)}")
     updated = max(int(row.get("更新时间") or 0) for row in selected.values())
     payload = {"date": today.isoformat(), "updatedAt": updated, "records": selected}
+    previous_date = today - timedelta(days=1)
+    previous, _ = select_day_records(records, previous_date)
+    if previous.get("Total"):
+        payload["previous"] = {"date": previous_date.isoformat(), "records": previous}
     if contributions is not None:
         payload["contributions"] = contributions
     Path(destination).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")

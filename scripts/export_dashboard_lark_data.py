@@ -417,6 +417,11 @@ def main():
         "x5ChannelMonthly": x5_channel_monthly,
         "contributions": contributions,
         "monthlyReports": [reports[label] for label in sorted(reports)],
+        "grossDaily": ({"date": export_date,
+                        "today": x5_export["records"].get("Total"),
+                        "previousDate": (x5_export.get("previous") or {}).get("date"),
+                        "previous": ((x5_export.get("previous") or {}).get("records") or {}).get("Total")}
+                       if x5_export.get("records") else None),
         "incomeEstimate": estimate,
         "rewardReports": ([{"month": label, "rows": reward[label]} for label in sorted(reward)]
                           if reward else None),
