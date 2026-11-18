@@ -124,7 +124,26 @@ def team_members(headers):
 
 
 def exchange_rates(headers):
-    return post(headers, "/exchangeRate/data/getExchangeRateData", {}, 30).get("data", {})
+    """CRM rates, falling back to the last saved copy (the endpoint returns empty bodies)."""
+    cache = Path(__file__).resolve().parent.parent / "work" / "exchange-rates.json"
+    try:
+        data = post(headers, "/exchangeRate/data/getExchangeRateData", {}, 30).get("data", {})
+        if data:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+            return data
+        print("warning=exchange rate API returned no data", file=sys.stderr, flush=True)
+    except Exception as exc:
+        print(f"warning=exchange rates unavailable: {type(exc).__name__}", file=sys.stderr, flush=True)
+    try:
+        data = json.loads(cache.read_text(encoding="utf-8"))
+        if data:
+            print(f"warning=using cached exchange rates ({len(data)} entries)", file=sys.stderr, flush=True)
+            return data
+    except Exception:
+        pass
+    print("warning=no exchange rates available; non-USD amounts used as-is", file=sys.stderr, flush=True)
+    return {}
 
 
 def usd(value, currency, rates):
